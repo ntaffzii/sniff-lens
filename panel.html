@@ -1,0 +1,970 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Network Image Sniffer</title>
+<style>
+  :root {
+    --bg-main: #09090b;
+    --bg-card: #18181b;
+    --bg-card-hover: #27272a;
+    --bg-header: rgba(18, 18, 22, 0.94);
+    --border-color: #27272a;
+    --border-hover: #3f3f46;
+    --text-main: #f4f4f5;
+    --text-muted: #a1a1aa;
+    --text-dim: #71717a;
+    --accent-green: #10b981;
+    --accent-green-hover: #059669;
+    --accent-blue: #3b82f6;
+    --accent-blue-hover: #2563eb;
+    --accent-indigo: #6366f1;
+    --accent-orange: #f97316;
+    --accent-red: #ef4444;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    background: var(--bg-main);
+    color: var(--text-main);
+    user-select: none;
+    -webkit-font-smoothing: antialiased;
+    overflow-x: hidden;
+  }
+
+  /* Header & Sticky Controls */
+  header {
+    position: sticky;
+    top: 0;
+    background: var(--bg-header);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--border-color);
+    z-index: 50;
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+  }
+
+  .header-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .brand-title {
+    font-size: 13px;
+    font-weight: 700;
+    color: #fff;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .live-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    background: rgba(16, 185, 129, 0.15);
+    border: 1px solid rgba(16, 185, 129, 0.3);
+    color: #34d399;
+    padding: 2px 6px;
+    border-radius: 9999px;
+    font-size: 9px;
+    font-weight: 700;
+  }
+
+  .live-dot {
+    width: 5px;
+    height: 5px;
+    background: #10b981;
+    border-radius: 50%;
+    box-shadow: 0 0 6px #10b981;
+    animation: pulse 1.8s infinite;
+  }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.4; transform: scale(0.85); }
+  }
+
+  /* Folder & Settings Bar */
+  .settings-summary-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: #131316;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    padding: 4px 8px;
+    font-size: 10px;
+    color: var(--text-muted);
+  }
+
+  .folder-info {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 78%;
+  }
+
+  .folder-tag {
+    color: #38bdf8;
+    font-weight: 600;
+    background: rgba(56, 189, 248, 0.1);
+    padding: 1px 5px;
+    border-radius: 4px;
+  }
+
+  .settings-icon-btn {
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    font-size: 12px;
+    padding: 2px 4px;
+    display: flex;
+    align-items: center;
+    gap: 3px;
+    border-radius: 4px;
+    transition: color 0.15s, background 0.15s;
+  }
+  .settings-icon-btn:hover { color: #fff; background: var(--bg-card-hover); }
+
+  /* Search & Filter Row */
+  .search-row {
+    display: flex;
+    gap: 5px;
+  }
+
+  .search-box {
+    flex: 1;
+    background: #18181b;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    padding: 5px 8px;
+    color: #fff;
+    font-size: 11px;
+    outline: none;
+    transition: border-color 0.15s;
+  }
+  .search-box:focus { border-color: var(--accent-blue); }
+  .search-box::placeholder { color: var(--text-dim); }
+
+  select {
+    background: #18181b;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    padding: 4px 6px;
+    color: var(--text-main);
+    font-size: 10px;
+    font-weight: 500;
+    cursor: pointer;
+    outline: none;
+  }
+  select:focus { border-color: var(--accent-blue); }
+
+  /* Toolbar Actions */
+  .toolbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 5px;
+    padding-top: 3px;
+    border-top: 1px solid rgba(255,255,255,0.05);
+  }
+
+  .select-all-label {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 10px;
+    color: var(--text-muted);
+    cursor: pointer;
+  }
+  .select-all-label input[type="checkbox"] {
+    accent-color: var(--accent-green);
+    cursor: pointer;
+  }
+
+  .action-buttons {
+    display: flex;
+    gap: 4px;
+  }
+
+  button {
+    border: none;
+    border-radius: 6px;
+    padding: 4px 8px;
+    font-size: 10.5px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+  }
+  button:active { transform: scale(0.97); }
+
+  .btn-primary { background: var(--accent-green); color: #000; }
+  .btn-primary:hover { background: var(--accent-green-hover); }
+  .btn-primary:disabled { background: #27272a; color: #71717a; cursor: not-allowed; }
+
+  .btn-secondary { background: #27272a; color: var(--text-main); }
+  .btn-secondary:hover { background: #3f3f46; }
+
+  .btn-danger { background: rgba(239, 68, 68, 0.15); color: #f87171; border: 1px solid rgba(239, 68, 68, 0.25); }
+  .btn-danger:hover { background: rgba(239, 68, 68, 0.3); }
+
+  /* Grid Layout */
+  #grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 8px;
+    padding: 10px;
+  }
+
+  .item-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    overflow: hidden;
+    position: relative;
+    transition: transform 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .item-card:hover {
+    border-color: var(--border-hover);
+    transform: translateY(-2px);
+    box-shadow: 0 6px 14px rgba(0,0,0,0.5);
+  }
+
+  .item-card.is-selected {
+    border-color: var(--accent-green);
+    box-shadow: 0 0 0 1px var(--accent-green);
+  }
+
+  .thumb-container {
+    position: relative;
+    width: 100%;
+    height: 115px;
+    background: #000;
+    cursor: pointer;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .thumb-img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+    transition: transform 0.25s ease;
+  }
+  .thumb-container:hover .thumb-img {
+    transform: scale(1.05);
+  }
+
+  .media-badge {
+    position: absolute;
+    bottom: 5px;
+    left: 5px;
+    background: rgba(0,0,0,0.75);
+    backdrop-filter: blur(4px);
+    color: #e4e4e7;
+    font-size: 8.5px;
+    font-weight: 700;
+    padding: 2px 4px;
+    border-radius: 4px;
+    text-transform: uppercase;
+  }
+
+  .dim-badge {
+    position: absolute;
+    bottom: 5px;
+    right: 5px;
+    background: rgba(0,0,0,0.75);
+    backdrop-filter: blur(4px);
+    color: #a1a1aa;
+    font-size: 8.5px;
+    padding: 2px 4px;
+    border-radius: 4px;
+  }
+
+  .checkbox-overlay {
+    position: absolute;
+    top: 5px;
+    left: 5px;
+    z-index: 5;
+    background: rgba(0,0,0,0.6);
+    border-radius: 5px;
+    padding: 2px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .checkbox-overlay input[type="checkbox"] {
+    width: 14px;
+    height: 14px;
+    accent-color: var(--accent-green);
+    cursor: pointer;
+    margin: 0;
+  }
+
+  .quick-download-btn {
+    position: absolute;
+    top: 5px;
+    right: 5px;
+    z-index: 5;
+    background: rgba(0,0,0,0.7);
+    backdrop-filter: blur(4px);
+    color: #fff;
+    border: none;
+    border-radius: 5px;
+    width: 24px;
+    height: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 11px;
+    cursor: pointer;
+    opacity: 0.85;
+    transition: opacity 0.15s, background 0.15s;
+    padding: 0;
+  }
+  .quick-download-btn:hover {
+    opacity: 1;
+    background: var(--accent-green);
+    color: #000;
+  }
+
+  .card-footer {
+    padding: 5px 7px;
+    font-size: 9.5px;
+    color: var(--text-muted);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: var(--bg-card);
+    border-top: 1px solid var(--border-color);
+  }
+
+  .filename-txt {
+    max-width: 80px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    color: #d4d4d8;
+  }
+
+  .filesize-txt {
+    color: var(--text-dim);
+    font-weight: 500;
+  }
+
+  /* Empty State */
+  #empty {
+    padding: 40px 16px;
+    text-align: center;
+    color: var(--text-dim);
+    font-size: 11.5px;
+    line-height: 1.5;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+  }
+  .empty-icon {
+    font-size: 28px;
+    margin-bottom: 2px;
+    opacity: 0.7;
+  }
+
+  /* ==========================================================================
+     Lightbox Modal (Fullscreen Preview)
+     ========================================================================== */
+  #lightbox-modal {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.92);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    z-index: 100;
+    display: none;
+    flex-direction: column;
+    opacity: 0;
+    transition: opacity 0.2s ease;
+  }
+  #lightbox-modal.active {
+    display: flex;
+    opacity: 1;
+  }
+
+  .lightbox-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 14px;
+    background: rgba(18, 18, 22, 0.9);
+    border-bottom: 1px solid var(--border-color);
+    gap: 8px;
+  }
+
+  .lightbox-rename-box {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex: 1;
+    max-width: 75%;
+  }
+
+  .lightbox-rename-input {
+    background: #18181b;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    padding: 5px 8px;
+    color: #fff;
+    font-size: 11px;
+    width: 100%;
+    outline: none;
+  }
+  .lightbox-rename-input:focus { border-color: var(--accent-green); }
+
+  .lightbox-close-btn {
+    background: #27272a;
+    color: #fff;
+    border-radius: 50%;
+    width: 26px;
+    height: 26px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 13px;
+    border: none;
+    cursor: pointer;
+    padding: 0;
+  }
+  .lightbox-close-btn:hover { background: #3f3f46; }
+
+  .lightbox-body {
+    flex: 1;
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 10px;
+    overflow: hidden;
+  }
+
+  .lightbox-img-wrapper {
+    max-width: 100%;
+    max-height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  #lightbox-img {
+    max-width: 95%;
+    max-height: calc(100vh - 210px);
+    object-fit: contain;
+    border-radius: 6px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.8);
+  }
+
+  .nav-btn {
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    background: rgba(24, 24, 27, 0.75);
+    color: #fff;
+    border: 1px solid var(--border-color);
+    width: 34px;
+    height: 34px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 15px;
+    cursor: pointer;
+    z-index: 10;
+    transition: all 0.15s;
+    padding: 0;
+  }
+  .nav-btn:hover { background: rgba(39, 39, 42, 0.95); transform: translateY(-50%) scale(1.1); }
+  .nav-btn.prev { left: 8px; }
+  .nav-btn.next { right: 8px; }
+
+  .lightbox-footer {
+    padding: 8px 12px 12px;
+    background: rgba(18, 18, 22, 0.95);
+    border-top: 1px solid var(--border-color);
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+  }
+
+  .lightbox-meta-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 10.5px;
+    color: var(--text-muted);
+  }
+
+  .meta-tag-group {
+    display: flex;
+    gap: 5px;
+  }
+
+  .meta-tag {
+    background: #27272a;
+    padding: 2px 5px;
+    border-radius: 4px;
+    color: #d4d4d8;
+    font-size: 9.5px;
+  }
+
+  .lightbox-path-preview {
+    font-size: 10px;
+    color: #38bdf8;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .lightbox-actions {
+    display: flex;
+    gap: 5px;
+  }
+  .lightbox-actions button {
+    flex: 1;
+    justify-content: center;
+    padding: 7px 8px;
+    font-size: 10.5px;
+  }
+
+  /* ==========================================================================
+     Settings Modal (Download Folder & Naming Configuration)
+     ========================================================================== */
+  #settings-modal {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.85);
+    backdrop-filter: blur(6px);
+    z-index: 110;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+  }
+  #settings-modal.active { display: flex; }
+
+  .settings-dialog {
+    background: #18181b;
+    border: 1px solid var(--border-hover);
+    border-radius: 10px;
+    width: 100%;
+    max-width: 360px;
+    box-shadow: 0 12px 30px rgba(0,0,0,0.8);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .settings-dialog-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 14px;
+    background: #202024;
+    border-bottom: 1px solid var(--border-color);
+  }
+  .settings-dialog-title { font-size: 12px; font-weight: 700; color: #fff; }
+
+  .settings-dialog-body {
+    padding: 12px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    font-size: 11px;
+  }
+
+  .form-group {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .form-label {
+    font-weight: 600;
+    color: #e4e4e7;
+    font-size: 10.5px;
+    display: flex;
+    justify-content: space-between;
+  }
+
+  .form-input {
+    background: #111;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    padding: 6px 8px;
+    color: #fff;
+    font-size: 11px;
+    outline: none;
+  }
+  .form-input:focus { border-color: var(--accent-green); }
+
+  .chip-group {
+    display: flex;
+    gap: 4px;
+    flex-wrap: wrap;
+    margin-top: 2px;
+  }
+  .chip-btn {
+    background: #27272a;
+    color: #d4d4d8;
+    border: none;
+    border-radius: 4px;
+    padding: 2px 6px;
+    font-size: 9.5px;
+    cursor: pointer;
+  }
+  .chip-btn:hover { background: #3f3f46; color: #fff; }
+
+  .preview-box {
+    background: #121214;
+    border: 1px dashed var(--border-color);
+    border-radius: 6px;
+    padding: 6px 8px;
+    font-size: 10px;
+    color: #38bdf8;
+    line-height: 1.4;
+  }
+
+  .checkbox-setting {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    color: #d4d4d8;
+    font-size: 10.5px;
+    cursor: pointer;
+  }
+  .checkbox-setting input[type="checkbox"] { accent-color: var(--accent-green); cursor: pointer; }
+
+  .settings-dialog-footer {
+    padding: 10px 14px;
+    background: #131316;
+    border-top: 1px solid var(--border-color);
+    display: flex;
+    justify-content: flex-end;
+    gap: 6px;
+  }
+
+  /* Toast Notification */
+  #toast {
+    position: fixed;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%) translateY(50px);
+    background: #18181b;
+    border: 1px solid var(--border-hover);
+    color: #fff;
+    padding: 6px 14px;
+    border-radius: 9999px;
+    font-size: 10.5px;
+    font-weight: 500;
+    box-shadow: 0 8px 20px rgba(0,0,0,0.6);
+    pointer-events: none;
+    opacity: 0;
+    transition: transform 0.2s ease, opacity 0.2s ease;
+    z-index: 200;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+  }
+  #toast.show {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+</style>
+</head>
+<body>
+
+  <!-- Sticky Header Controls -->
+  <header>
+    <div class="header-top">
+      <div class="brand-title">
+        <img src="icons/icon-32.png" width="22" height="22" style="filter: drop-shadow(0 0 8px rgba(16, 185, 129, 0.5));" alt="Logo" />
+        <span>Network Sniffer</span>
+        <span class="live-badge"><span class="live-dot"></span>LIVE</span>
+      </div>
+
+      <span id="stat-count" style="font-size: 10.5px; color: var(--text-muted); font-weight: 600;">0 items</span>
+    </div>
+
+    <!-- Folder & Filename Settings Summary -->
+    <div class="settings-summary-bar">
+      <div class="folder-info" id="folder-summary-btn" title="Configure destination folder and filename pattern for this tab" style="cursor:pointer;">
+        <span>📁 <span class="folder-tag" id="active-folder-label">captured</span></span>
+        <span>🏷️ <span style="color:#a1a1aa;" id="active-pattern-label">{prefix}_{num3}</span></span>
+        <span class="folder-tag" id="active-tab-badge" style="background:rgba(99, 102, 241, 0.15); color:#a5b4fc; border-color:rgba(99, 102, 241, 0.3); font-size:9px; font-weight:600;">📌 This Tab</span>
+      </div>
+      <button class="settings-icon-btn" id="open-settings-btn" title="Configure destination folder and filename pattern for this tab">
+        <span>⚙️ Settings</span>
+      </button>
+    </div>
+
+    <!-- Universal Native Hardware Auto-Slide Key Simulator Bar -->
+    <div id="fb-assistant-bar" style="background: linear-gradient(135deg, rgba(37, 99, 235, 0.2), rgba(16, 185, 129, 0.1)); border: 1px solid rgba(59, 130, 246, 0.4); border-radius: 8px; padding: 7px 10px; display: flex; flex-direction: column; gap: 6px;">
+      <div style="display: flex; justify-content: space-between; align-items: center;">
+        <span style="font-size: 11px; font-weight: 700; color: #60a5fa; display: flex; align-items: center; gap: 4px;">
+          <span>⚡ Native Auto-Slide (Hardware Key [→])</span>
+        </span>
+        <span id="fb-slide-indicator" style="font-size: 9.5px; color: #34d399; background: rgba(16, 185, 129, 0.2); border: 1px solid rgba(16, 185, 129, 0.3); padding: 1px 6px; border-radius: 4px; font-weight: 600;">isTrusted: true</span>
+      </div>
+      <div style="display: flex; gap: 5px; align-items: center;">
+        <button id="fb-play-btn" style="flex: 1.3; background: #2563eb; color: #fff; border: none; border-radius: 6px; padding: 5px 8px; font-size: 10.5px; font-weight: 600; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 4px; transition: all 0.15s;">
+          <span id="fb-play-icon">▶️</span> <span id="fb-play-text">Auto-Play</span>
+        </button>
+        <button id="fb-next-btn" style="flex: 1; background: #1e293b; color: #e2e8f0; border: 1px solid #334155; border-radius: 6px; padding: 5px 8px; font-size: 10.5px; font-weight: 600; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 4px;" title="Send single native [→] key">
+          <span>➡️ Step Once</span>
+        </button>
+        <select id="fb-speed-select" style="flex: 0.9; background: #0f172a; border: 1px solid #334155; border-radius: 6px; padding: 4px 6px; color: #94a3b8; font-size: 10px; cursor: pointer;" title="Auto-slide interval speed">
+          <option value="800">0.8s</option>
+          <option value="1200">1.2s</option>
+          <option value="1800">1.8s</option>
+          <option value="2200" selected>2.2s</option>
+          <option value="3000">3.0s</option>
+        </select>
+      </div>
+      <div style="font-size: 9px; color: #94a3b8; line-height: 1.3;">
+        💡 Dispatches native hardware key events (isTrusted = true) compatible with Facebook and photo viewers.
+      </div>
+    </div>
+
+    <!-- Search and Size Filter -->
+    <div class="search-row">
+      <input type="text" id="search-input" class="search-box" placeholder="🔍 Search URL or filename..." />
+      <select id="filter-type">
+        <option value="all">All Types</option>
+        <option value="image">🖼️ Images</option>
+        <option value="media">🎥 Videos</option>
+      </select>
+      <select id="filter-size">
+        <option value="0">All Sizes</option>
+        <option value="51200">> 50 KB</option>
+        <option value="204800">> 200 KB</option>
+        <option value="1048576">> 1 MB</option>
+      </select>
+    </div>
+
+    <!-- Batch Actions Toolbar -->
+    <div class="toolbar">
+      <label class="select-all-label">
+        <input type="checkbox" id="select-all-cb" />
+        <span id="select-all-text">Select All</span>
+      </label>
+      <div class="action-buttons">
+        <button id="dl-selected-btn" class="btn-primary" disabled>💾 Download Selected (<span id="selected-count">0</span>)</button>
+        <button id="dl-all-btn" class="btn-secondary">⚡ Download All</button>
+        <button id="clear-btn" class="btn-danger" title="Clear captured items for this tab">🗑️</button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Image Grid -->
+  <div id="grid"></div>
+
+  <!-- Empty State -->
+  <div id="empty" style="display:none; text-align: center; padding: 40px 16px;">
+    <img src="icons/icon-128.png" width="56" height="56" style="margin-bottom: 12px; filter: drop-shadow(0 0 14px rgba(16, 185, 129, 0.45));" alt="Sniffer Logo" />
+    <div style="font-weight: 600; color: #e4e4e7; font-size: 12px;">Sniffing Media Traffic from Network...</div>
+    <div style="color: var(--text-dim); font-size: 11px; margin-top: 4px;">Browse or scroll the webpage to capture full-resolution assets (Auto-deduplicated)</div>
+  </div>
+
+  <!-- Lightbox Modal (Fullscreen Preview & Single Rename) -->
+  <div id="lightbox-modal">
+    <div class="lightbox-header">
+      <div class="lightbox-rename-box">
+        <span>✏️</span>
+        <input type="text" id="lightbox-rename-input" class="lightbox-rename-input" placeholder="Rename filename before download..." />
+      </div>
+      <button class="lightbox-close-btn" id="lightbox-close">✕</button>
+    </div>
+    <div class="lightbox-body">
+      <button class="nav-btn prev" id="lightbox-prev" title="Previous item (◀ Arrow Key)">‹</button>
+      <div class="lightbox-img-wrapper">
+        <img id="lightbox-img" src="" alt="Full preview" />
+      </div>
+      <button class="nav-btn next" id="lightbox-next" title="Next item (▶ Arrow Key)">›</button>
+    </div>
+    <div class="lightbox-footer">
+      <div class="lightbox-path-preview" id="lightbox-path-preview">
+        📁 Downloads/captured/image_001.jpg
+      </div>
+      <div class="lightbox-meta-row">
+        <div class="meta-tag-group">
+          <span class="meta-tag" id="lightbox-dim">1920 × 1080</span>
+          <span class="meta-tag" id="lightbox-size">420 KB</span>
+          <span class="meta-tag" id="lightbox-mime">image/jpeg</span>
+        </div>
+        <span id="lightbox-index-badge" style="color: var(--text-dim); font-size: 10.5px;">1 / 20</span>
+      </div>
+      <div class="lightbox-actions">
+        <button id="lightbox-dl-btn" class="btn-primary">💾 Download Image</button>
+        <button id="lightbox-copy-btn" class="btn-secondary">📋 Copy URL</button>
+        <button id="lightbox-open-tab-btn" class="btn-secondary">↗️ Open in Tab</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Settings Modal (Custom Folder & Filename Pattern) -->
+  <div id="settings-modal">
+    <div class="settings-dialog">
+      <div class="settings-dialog-header">
+        <span class="settings-dialog-title" style="display: flex; align-items: center; gap: 6px;">
+          <img src="icons/icon-32.png" width="18" height="18" style="filter: drop-shadow(0 0 6px rgba(16, 185, 129, 0.4));" alt="Logo" />
+          <span>Folder & Filename Settings</span>
+        </span>
+        <button class="lightbox-close-btn" id="settings-close-btn">✕</button>
+      </div>
+      <div class="settings-dialog-body">
+        
+        <!-- Tab Scope Info Banner -->
+        <div id="settings-scope-banner" style="background: rgba(99, 102, 241, 0.12); border: 1px solid rgba(99, 102, 241, 0.28); border-radius: 6px; padding: 6px 10px; font-size: 10px; color: #c7d2fe; display: flex; align-items: center; justify-content: space-between;">
+          <span>📌 <b>Active Tab Profile:</b></span>
+          <span id="settings-tab-name" style="color: #fff; font-weight: 600; max-width: 170px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">Current Tab</span>
+        </div>
+
+        <!-- Folder Setting -->
+        <div class="form-group">
+          <label class="form-label">
+            <span>📁 Destination Subfolder (inside Downloads/)</span>
+          </label>
+          <input type="text" id="setting-folder-input" class="form-input" placeholder="e.g. captured, project-a, shopee" />
+          <div class="chip-group">
+            <button class="chip-btn" id="preset-folder-domain">🏷️ By Domain</button>
+            <button class="chip-btn" id="preset-folder-date">📅 By Date</button>
+            <button class="chip-btn" id="preset-folder-default">🔄 captured</button>
+          </div>
+        </div>
+
+        <!-- Filename Template -->
+        <div class="form-group">
+          <label class="form-label">
+            <span>🏷️ Filename Template</span>
+          </label>
+          <input type="text" id="setting-pattern-input" class="form-input" placeholder="{prefix}_{num3}" />
+          <div class="chip-group">
+            <button class="chip-btn" id="preset-name-seq">🔢 Sequential ({prefix}_{num3})</button>
+            <button class="chip-btn" id="preset-name-domain">🏷️ By Domain ({domain}_{num3})</button>
+            <button class="chip-btn" id="preset-name-orig">📄 Original ({orig})</button>
+          </div>
+        </div>
+
+        <!-- Prefix Setting -->
+        <div class="form-group">
+          <label class="form-label">
+            <span>🔤 Filename Prefix (for {prefix})</span>
+          </label>
+          <input type="text" id="setting-prefix-input" class="form-input" placeholder="e.g. image, photo, item" />
+        </div>
+
+        <!-- Start Number Setting -->
+        <div class="form-group">
+          <label class="form-label">
+            <span>🔢 Starting Sequence Number (Start Number)</span>
+            <span style="color: #a1a1aa; font-weight: normal;">e.g. 1, 50, 101</span>
+          </label>
+          <input type="number" id="setting-start-num-input" class="form-input" min="1" value="1" placeholder="1" />
+        </div>
+
+        <!-- Live Preview -->
+        <div class="preview-box" id="setting-preview-box">
+          Preview: <b>image_001.jpg</b>, <b>image_002.jpg</b><br/>
+          Destination: <b>Downloads/captured/image_001.jpg</b>
+        </div>
+
+        <!-- Checkbox Options -->
+        <label class="checkbox-setting">
+          <input type="checkbox" id="setting-dedup-cb" checked />
+          <span>🛡️ Smart Deduplication (Prevent Duplicate Downloads)</span>
+        </label>
+        <label class="checkbox-setting">
+          <input type="checkbox" id="setting-saveas-cb" />
+          <span>❓ Always show "Save As" confirmation prompt</span>
+        </label>
+        <label class="checkbox-setting" style="border-top: 1px dashed var(--border-color); padding-top: 6px; margin-top: 2px;">
+          <input type="checkbox" id="setting-save-global-cb" />
+          <span style="color: #a5b4fc;">🌐 Save as global default for future new tabs</span>
+        </label>
+
+      </div>
+
+      <div class="settings-dialog-footer">
+        <button class="btn-secondary" id="settings-cancel-btn">Cancel</button>
+        <button class="btn-primary" id="settings-save-btn">💾 Save Settings</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Confirmation Modal (Before Batch Download) -->
+  <div id="confirm-download-modal" class="settings-modal" style="position: fixed; inset: 0; background: rgba(0,0,0,0.88); backdrop-filter: blur(6px); z-index: 120; display: none; align-items: center; justify-content: center; padding: 16px;">
+    <div class="settings-dialog" style="max-width: 350px;">
+      <div class="settings-dialog-header" style="background: #27272a;">
+        <span class="settings-dialog-title" style="color: #facc15;">⚠️ Confirm Batch Download</span>
+        <button class="lightbox-close-btn" id="confirm-close-btn">✕</button>
+      </div>
+      <div class="settings-dialog-body" style="gap: 10px;">
+        <div style="font-size: 13px; font-weight: 700; color: #fff;">
+          Ready to download <span id="confirm-count" style="color: var(--accent-green);">0</span> files
+        </div>
+        <div style="background: #111; border: 1px solid var(--border-color); border-radius: 6px; padding: 8px; font-size: 10.5px; display: flex; flex-direction: column; gap: 4px;">
+          <div>📁 <b>Destination:</b> <span id="confirm-folder" style="color: #38bdf8;">Downloads/captured</span></div>
+          <div>🏷️ <b>Filename Range:</b> <span id="confirm-names" style="color: #a1a1aa;">image_001.jpg to ...</span></div>
+        </div>
+        
+        <!-- Crucial Notice Box -->
+        <div style="background: rgba(234, 179, 8, 0.1); border: 1px solid rgba(234, 179, 8, 0.3); border-radius: 6px; padding: 8px 10px; font-size: 10px; color: #fef08a; line-height: 1.5;">
+          💡 <b>Tip for Batch Downloads</b>:<br/>
+          To download all files automatically without Save As popups, open <b>chrome://settings/downloads</b> and turn <u>OFF</u> <i>"Ask where to save each file before downloading"</i>.
+        </div>
+      </div>
+      <div class="settings-dialog-footer">
+        <button class="btn-secondary" id="confirm-cancel-btn">Cancel</button>
+        <button class="btn-primary" id="confirm-proceed-btn" style="background: #eab308; color: #000;">⚡ Start Batch Download</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Active Batch Progress Banner -->
+  <div id="batch-progress-banner" style="display: none; position: sticky; bottom: 0; left: 0; right: 0; background: #1e1b4b; border-top: 1px solid #4338ca; padding: 8px 12px; z-index: 60; font-size: 11px; color: #c7d2fe; display: none; justify-content: space-between; align-items: center;">
+    <div style="display: flex; align-items: center; gap: 6px;">
+      <span style="animation: spin 1s linear infinite; display: inline-block;">⏳</span>
+      <span>Downloading (<span id="progress-current">0</span>/<span id="progress-total">0</span>): <b id="progress-filename" style="color: #fff;">image_001.jpg</b></span>
+    </div>
+    <button id="cancel-batch-btn" style="background: #ef4444; color: #fff; border: none; border-radius: 4px; padding: 3px 7px; font-size: 10px; cursor: pointer;">⏹️ Cancel</button>
+  </div>
+
+  <!-- Toast Element -->
+  <div id="toast">📋 Copied to clipboard</div>
+
+  <script src="panel.js"></script>
+</body>
+</html>
+
+
+
+
