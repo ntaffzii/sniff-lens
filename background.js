@@ -1,12 +1,74 @@
 // ============================================================================
-// Network Image Sniffer & AI Toolkit - Background Service Worker (v2.1.0)
+// Network Image Sniffer & AI Toolkit - Background Service Worker (v3.0.0)
 // ============================================================================
 
 const MAX_ITEMS_PER_TAB = 300;
 const activeBatchDownloads = {};
 
+// ตั้งค่า Dynamic Header Modification (แก้ปัญหา TikTok/Facebook 403 Forbidden ใน Extension)
+async function setupRefererRules() {
+  if (!chrome.declarativeNetRequest) return;
+  const rules = [
+    {
+      id: 101,
+      priority: 1,
+      action: {
+        type: "modifyHeaders",
+        requestHeaders: [
+          { header: "Referer", operation: "set", value: "https://www.tiktok.com/" },
+          { header: "Origin", operation: "set", value: "https://www.tiktok.com" }
+        ]
+      },
+      condition: {
+        urlFilter: "*tiktok*",
+        resourceTypes: ["xmlhttprequest", "media", "image", "other"]
+      }
+    },
+    {
+      id: 102,
+      priority: 1,
+      action: {
+        type: "modifyHeaders",
+        requestHeaders: [
+          { header: "Referer", operation: "set", value: "https://www.tiktok.com/" },
+          { header: "Origin", operation: "set", value: "https://www.tiktok.com" }
+        ]
+      },
+      condition: {
+        urlFilter: "*byteoversea*",
+        resourceTypes: ["xmlhttprequest", "media", "image", "other"]
+      }
+    },
+    {
+      id: 103,
+      priority: 1,
+      action: {
+        type: "modifyHeaders",
+        requestHeaders: [
+          { header: "Referer", operation: "set", value: "https://www.facebook.com/" },
+          { header: "Origin", operation: "set", value: "https://www.facebook.com" }
+        ]
+      },
+      condition: {
+        urlFilter: "*fbcdn.net*",
+        resourceTypes: ["xmlhttprequest", "media", "image", "other"]
+      }
+    }
+  ];
+
+  try {
+    await chrome.declarativeNetRequest.updateDynamicRules({
+      removeRuleIds: [101, 102, 103],
+      addRules: rules
+    });
+  } catch (err) {
+    console.warn("[DeclarativeNetRequest] Setup rule error:", err);
+  }
+}
+
 // ติดตั้ง Context Menus และตั้งค่าเริ่มต้น
 chrome.runtime.onInstalled.addListener(() => {
+  setupRefererRules();
   chrome.contextMenus.create({
     id: "open-side-panel",
     title: "🌐 เปิด Network Sniffer Panel",
@@ -18,6 +80,10 @@ chrome.runtime.onInstalled.addListener(() => {
     title: "💾 ดาวน์โหลดรูปนี้ทันที",
     contexts: ["image"]
   });
+});
+
+chrome.runtime.onStartup.addListener(() => {
+  setupRefererRules();
 });
 
 // จัดการเมื่อคลิก Context Menu

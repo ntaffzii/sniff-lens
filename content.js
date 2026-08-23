@@ -306,12 +306,13 @@ function scanAndExtractPageVideos() {
     }
   });
 
-  // 3. สแกน Script Tags และ Facebook Internal Relay Data (browser_native_hd_url, playable_url_quality_hd)
+  // 3. สแกน Script Tags และ Facebook / TikTok Internal Data (browser_native_hd_url, playAddr)
   const scripts = document.querySelectorAll("script");
   scripts.forEach((s) => {
     const text = s.textContent;
     if (!text || text.length < 50) return;
 
+    // Facebook / Instagram Video Patterns
     if (text.includes("browser_native_hd_url") || text.includes("playable_url_quality_hd") || text.includes("browser_native_sd_url") || text.includes("playable_url") || text.includes("hd_src")) {
       const regex = /"(?:browser_native_hd_url|playable_url_quality_hd|browser_native_sd_url|playable_url|hd_src|sd_src)"\s*:\s*"([^"]+)"/g;
       let match;
@@ -322,9 +323,53 @@ function scanAndExtractPageVideos() {
         }
       }
     }
+
+    // TikTok PlayAddr & DownloadAddr Patterns
+    if (text.includes('"playAddr"') || text.includes('"downloadAddr"')) {
+      const regex = /"(?:playAddr|downloadAddr)"\s*:\s*"([^"]+)"/g;
+      let match;
+      while ((match = regex.exec(text)) !== null) {
+        const cleaned = cleanMediaUrl(match[1]);
+        if (cleaned && cleaned.startsWith("http")) {
+          foundUrls.add(cleaned);
+        }
+      }
+    }
   });
 
-  // 4. ส่ง URL ที่พบไปยัง background.js (O(1) lookups)
+  // 4. สแกน TikTok Video State (__UNIVERSAL_DATA_FOR_REHYDRATION__ & SIGI_STATE)
+  if (window.location.hostname.includes("tiktok.com")) {
+    const rehydration = document.getElementById("__UNIVERSAL_DATA_FOR_REHYDRATION__");
+    if (rehydration) {
+      try {
+        const d = JSON.parse(rehydration.textContent);
+        const detail = d["__DEFAULT_SCOPE__"]?.["webapp.video-detail"]?.itemInfo?.itemStruct;
+        const playUrl = detail?.video?.playAddr || detail?.video?.downloadAddr;
+        if (playUrl) {
+          const cleaned = cleanMediaUrl(playUrl);
+          if (cleaned) foundUrls.add(cleaned);
+        }
+      } catch {}
+    }
+
+    const sigi = document.getElementById("SIGI_STATE");
+    if (sigi) {
+      try {
+        const sd = JSON.parse(sigi.textContent);
+        const items = sd.ItemModule || {};
+        for (const k of Object.keys(items)) {
+          const itm = items[k];
+          const playUrl = itm.video?.playAddr || itm.video?.downloadAddr;
+          if (playUrl) {
+            const cleaned = cleanMediaUrl(playUrl);
+            if (cleaned) foundUrls.add(cleaned);
+          }
+        }
+      } catch {}
+    }
+  }
+
+  // 5. ส่ง URL ที่พบไปยัง background.js (O(1) lookups)
   foundUrls.forEach((url) => {
     if (!extractedVideoUrls.has(url)) {
       extractedVideoUrls.add(url);
@@ -336,6 +381,7 @@ function scanAndExtractPageVideos() {
       }).catch(() => {});
     }
   });
+
 }
 
 // สแกนเมื่อโหลดหน้าเว็บ, เลื่อนหน้าจอ, หรือ DOM เปลี่ยนแปลง (Debounced O(1))
