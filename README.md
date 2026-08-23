@@ -151,6 +151,7 @@ network-image-sniffer/
 ├── CHANGELOG.md          # Chronological version release notes
 ├── CONTRIBUTING.md       # Open-source contribution guidelines
 ├── LICENSE               # MIT License
+├── ROADMAP.md            # Strategic product roadmap & technical design specs
 ├── README_TH.md          # Complete Thai companion documentation
 └── README.md             # Primary Global English documentation
 ```
