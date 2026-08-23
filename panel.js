@@ -324,6 +324,7 @@ function render() {
       videoEl.src = item.url;
       videoEl.muted = true;
       videoEl.preload = "metadata";
+      videoEl.playsInline = true;
       videoEl.onloadedmetadata = () => {
         if (videoEl.videoWidth && videoEl.videoHeight) {
           item.width = videoEl.videoWidth;
@@ -332,7 +333,7 @@ function render() {
         }
       };
       videoEl.onerror = () => {
-        dimBadge.textContent = "Media";
+        dimBadge.textContent = "MP4 Video";
       };
       thumbContainer.appendChild(videoEl);
     } else {

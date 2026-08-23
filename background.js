@@ -68,43 +68,44 @@ function normalizeImageUrl(rawUrl) {
 
 // ============================================================================
 // ============================================================================
-// Helper: ตรวจสอบวิดีโอ MP4 / WebM แท้ที่ไม่ได้เข้ารหัส และปฏิเสธ Streaming Chunks
+// Helper: ตัด Byte-Range Parameters ออกจาก URL เพื่อแปลงเศษ Chunk ให้เป็น Full Video URL
 // ============================================================================
-function isStandaloneMp4Video(rawUrl, contentType, contentLength, statusCode, responseHeaders) {
-  // 1. ปฏิเสธ HTTP 206 Partial Content เด็ดขาด (เป็นเศษ Chunks)
-  if (statusCode === 206) return false;
+function stripVideoChunkParams(rawUrl) {
+  try {
+    const u = new URL(rawUrl);
+    const chunkParams = ["bytestart", "byteend", "range", "bytes", "sq", "initsegment", "fmp4"];
+    let modified = false;
+    for (const p of chunkParams) {
+      if (u.searchParams.has(p)) {
+        u.searchParams.delete(p);
+        modified = true;
+      }
+    }
+    return modified ? u.href : rawUrl;
+  } catch {
+    return rawUrl;
+  }
+}
 
+// ============================================================================
+// Helper: ตรวจสอบวิดีโอ MP4 / WebM แท้ และแยกแยะระหว่างไฟล์สตรีมมิ่งที่ไม่ใช่ MP4
+// ============================================================================
+function isPlayableVideoRequest(rawUrl, contentType) {
   const urlLower = rawUrl.toLowerCase();
   const mimeLower = (contentType || "").toLowerCase();
 
-  // 2. ปฏิเสธหากมี Header Content-Range (เป็นเศษ Byte-Range)
-  if (responseHeaders && Array.isArray(responseHeaders)) {
-    for (const h of responseHeaders) {
-      if (h.name.toLowerCase() === "content-range") return false;
-    }
-  }
-
-  // 3. ปฏิเสธไฟล์สตรีมมิ่ง, Manifests, และ Byte-Range Chunks ทุกประเภท (Facebook / Web Chunks)
-  const streamingBlacklist = [
-    ".m3u8", ".mpd", ".m4s", ".ts", "video/mp2t", "application/x-mpegurl",
-    "application/vnd.apple.mpegurl", "application/dash+xml", "init.mp4",
-    "/hls/", "/dash/", "segment-", "seg-", "chunk-", "bytestart=", "byteend=",
-    "range=", "bytes=", "sq=", "initsegment=", "_fmp4"
+  // ปฏิเสธเฉพาะไฟล์สตรีมมิ่ง TS / DASH segments แท้ที่ต่อกันไม่ได้
+  const nonMp4Streaming = [
+    ".mpd", ".m4s", ".ts", "video/mp2t", "application/dash+xml", "segment-", "seg-"
   ];
-  for (const ind of streamingBlacklist) {
+  for (const ind of nonMp4Streaming) {
     if (urlLower.includes(ind) || mimeLower.includes(ind)) return false;
   }
 
-  // 4. ต้องเป็น MIME type ของวิดีโอแท้ หรือมีนามสกุล .mp4, .webm
   const isDirectMime = mimeLower.includes("video/mp4") || mimeLower.includes("video/webm") || mimeLower.includes("video/quicktime");
   const isDirectExt = urlLower.includes(".mp4") || urlLower.includes(".webm");
 
-  if (!isDirectMime && !isDirectExt) return false;
-
-  // 5. วิดีโอ MP4 แท้ควรมีขนาด > 50 KB (ป้องกัน Header เปล่าหรือ Chunks ชำรุด)
-  if (contentLength !== null && contentLength > 0 && contentLength < 51200) return false;
-
-  return true;
+  return isDirectMime || isDirectExt;
 }
 
 // ============================================================================
@@ -135,37 +136,40 @@ chrome.webRequest.onCompleted.addListener(
 
     const isImage = details.type === "image" || (contentType && contentType.startsWith("image/"));
     const isHlsStream = details.url.toLowerCase().includes(".m3u8") || (contentType && (contentType.includes("application/x-mpegurl") || contentType.includes("application/vnd.apple.mpegurl")));
-    const isDirectVideo = details.type === "media" || (contentType && contentType.startsWith("video/"));
+    const isDirectVideo = (details.type === "media" || (contentType && contentType.startsWith("video/")) || isPlayableVideoRequest(details.url, contentType));
 
     if (!isImage && !isHlsStream && !isDirectVideo) return;
 
     // กรอง Tracking Pixels หรือ Spacer GIFs ขนาดจิ๋ว (< 30 bytes)
     if (isImage && contentLength !== null && contentLength > 0 && contentLength < 30) return;
 
-    // กรองเฉพาะ Standalone MP4/WebM Videos เท่านั้น ปฏิเสธ Chunks สตรีมมิ่งย่อยและ Byte-Range Chunks
-    if (isDirectVideo && !isHlsStream && !isStandaloneMp4Video(details.url, contentType, contentLength, details.statusCode, details.responseHeaders)) return;
-
-    const normalizedUrl = normalizeImageUrl(details.url);
-
-    // กำหนด Resource Type ที่ชัดเจน
+    // ถ้าเป็นวิดีโอ ให้แปลง URL จากเศษ Byte-Range ให้กลายเป็น Full Master Video URL
+    let targetUrl = details.url;
     let resourceType = "image";
-    if (isHlsStream) resourceType = "hls_stream";
-    else if (isDirectVideo) resourceType = "media";
 
-    // สร้าง Fingerprint จาก ETag หรือ Path + Size
+    if (isHlsStream) {
+      resourceType = "hls_stream";
+    } else if (isDirectVideo) {
+      resourceType = "media";
+      targetUrl = stripVideoChunkParams(details.url);
+    }
+
+    const normalizedUrl = normalizeImageUrl(targetUrl);
+
+    // สร้าง Fingerprint จาก ETag หรือ Path
     let cleanPath = "";
-    try { cleanPath = new URL(details.url).pathname; } catch {}
-    const fingerprint = etag ? `etag_${etag}` : (contentLength ? `fp_${cleanPath}_${contentLength}` : null);
+    try { cleanPath = new URL(targetUrl).pathname; } catch {}
+    const fingerprint = etag ? `etag_${etag}` : (isDirectVideo ? `video_${cleanPath}` : (contentLength ? `fp_${cleanPath}_${contentLength}` : null));
 
     addCapturedItem(details.tabId, {
       id: "cap_" + Date.now() + "_" + Math.random().toString(36).slice(2, 7),
-      url: details.url,
+      url: targetUrl,
       normalizedUrl,
       etag,
       fingerprint,
       resourceType: resourceType,
       contentType: contentType || (isHlsStream ? "application/x-mpegURL" : (isDirectVideo ? "video/mp4" : "image/jpeg")),
-      size: contentLength,
+      size: isDirectVideo ? null : contentLength,
       statusCode: details.statusCode,
       timestamp: Date.now()
     });
@@ -173,6 +177,7 @@ chrome.webRequest.onCompleted.addListener(
   { urls: ["<all_urls>"], types: ["image", "media", "xmlhttprequest", "other"] },
   ["responseHeaders"]
 );
+
 
 /**
  * บันทึกรายการรูปภาพลง Session Storage พร้อม 4-Tier Deduplication & Tab Capture Toggles
