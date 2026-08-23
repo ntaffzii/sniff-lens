@@ -329,11 +329,32 @@ function render() {
         if (videoEl.videoWidth && videoEl.videoHeight) {
           item.width = videoEl.videoWidth;
           item.height = videoEl.videoHeight;
+          item.isAudio = false;
           dimBadge.textContent = `${videoEl.videoWidth}×${videoEl.videoHeight}`;
+        } else {
+          item.isAudio = true;
+          dimBadge.textContent = "Audio 🎵";
+          typeBadge.textContent = "AUDIO";
+          thumbContainer.innerHTML = "";
+          const audioCard = document.createElement("div");
+          audioCard.className = "thumb-img";
+          audioCard.style.display = "flex";
+          audioCard.style.flexDirection = "column";
+          audioCard.style.alignItems = "center";
+          audioCard.style.justifyContent = "center";
+          audioCard.style.background = "linear-gradient(135deg, #312e81, #1e1b4b)";
+          audioCard.style.color = "#a5b4fc";
+          audioCard.style.fontSize = "11px";
+          audioCard.style.fontWeight = "700";
+          audioCard.style.gap = "4px";
+          audioCard.innerHTML = `<span style="font-size:24px;">🎵</span><span>AUDIO TRACK</span>`;
+          thumbContainer.appendChild(audioCard);
+          thumbContainer.appendChild(typeBadge);
+          thumbContainer.appendChild(dimBadge);
         }
       };
       videoEl.onerror = () => {
-        dimBadge.textContent = "MP4 Video";
+        dimBadge.textContent = "Media";
       };
       thumbContainer.appendChild(videoEl);
     } else {
@@ -584,6 +605,24 @@ function updateLightboxContent() {
       `;
       wrapper.appendChild(hlsCard);
       if (lightboxDim) lightboxDim.textContent = "HLS Stream";
+    } else if (item.isAudio) {
+      const audioWrapper = document.createElement("div");
+      audioWrapper.style.display = "flex";
+      audioWrapper.style.flexDirection = "column";
+      audioWrapper.style.alignItems = "center";
+      audioWrapper.style.justifyContent = "center";
+      audioWrapper.style.padding = "30px 20px";
+      audioWrapper.style.background = "linear-gradient(135deg, rgba(49, 46, 129, 0.6), rgba(15, 23, 42, 0.9))";
+      audioWrapper.style.border = "1px solid #6366f1";
+      audioWrapper.style.borderRadius = "8px";
+      audioWrapper.style.gap = "14px";
+      audioWrapper.innerHTML = `
+        <span style="font-size: 48px;">🎵</span>
+        <span style="font-size: 14px; font-weight: 700; color: #a5b4fc;">Audio Track (Soundtrack / Voice)</span>
+        <audio id="lightbox-audio" controls autoplay src="${item.url}" style="width: 280px;"></audio>
+      `;
+      wrapper.appendChild(audioWrapper);
+      if (lightboxDim) lightboxDim.textContent = "Audio Stream";
     } else if (item.resourceType === "media") {
       const vid = document.createElement("video");
       vid.id = "lightbox-video";
@@ -622,12 +661,15 @@ function updateLightboxContent() {
   if (dlBtn) {
     if (item.resourceType === "hls_stream") {
       dlBtn.textContent = "⚡ Stitch & Download HLS Video";
+    } else if (item.isAudio) {
+      dlBtn.textContent = "💾 Download Audio Track";
     } else if (item.resourceType === "media") {
       dlBtn.textContent = "💾 Download Video";
     } else {
       dlBtn.textContent = "💾 Download Image";
     }
   }
+
 
   if (lightboxSize) lightboxSize.textContent = humanSize(item.size);
   if (lightboxMime) lightboxMime.textContent = item.contentType || "image/jpeg";
