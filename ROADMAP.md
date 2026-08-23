@@ -10,18 +10,24 @@ This document outlines the strategic roadmap, architectural specifications, and 
 ┌──────────────────────────────────────────────────────────────────────────────────┐
 │                             SniffLens Release Pipeline                           │
 ├───────────────────────┬──────────────────────────┬───────────────────────────────┤
-│ ✅ Completed (v3.0.0) │ ⏳ Phase 2 (v3.2.0)      │ 🔮 Phase 3 (v3.5.0)           │
-│ Production Ready      │ In Planning              │ Backlog & Architecture        │
+│ ✅ Completed (v3.1.0) │ ⏳ Phase 2 (v3.2.0)      │ 🔮 Phase 3 (v3.5.0)           │
+│ Production Ready      │ Next Sprint              │ Cloud & Distribution          │
 │ • Network Sniffer     │ • On-Device AI BG Removal│ • Chrome Web Store CI/CD      │
-│ • Native Hardware Key │ • Local OCR Text Parser  │ • Direct Drive / S3 Webhook   │
-│ • Multi-Tab Isolation │ • Smart Image Upscaler   │ • Custom Global Hotkeys       │
-│ • HLS Video Stitcher  │ • Vision Dataset Parser  │ • Auto-Package Release        │
+│ • Macro Studio (Keys) │ • Local OCR Text Parser  │ • Direct Google Drive / S3    │
+│ • Multi-Tab Isolation │ • Smart Image Upscaler   │ • Discord / Telegram Webhook  │
+│ • HLS Video Stitcher  │ • Vision Dataset Parser  │ • Automated E2E Test Suite    │
+│ • In-Memory Blob Save │ • AI Auto-Tagging        │ • Auto-Package Releases       │
 └───────────────────────┴──────────────────────────┴───────────────────────────────┘
 ```
 
 ---
 
-## 🎯 Phase 1 (v3.0.0): HLS & DASH Streaming Video Stitcher Engine `[✅ COMPLETED]`
+## 🎯 Phase 1.5 (v3.1.0): Multi-Block Hardware Key Macro Studio `[✅ COMPLETED]`
+- **Universal Directional Keys**: Native simulation of `ArrowRight`, `ArrowDown`, `ArrowLeft`, `ArrowUp`, `PageDown`, `Spacebar`.
+- **Multi-Block Visual Sequence Chain**: Chaining multiple action blocks with independent per-block delay configuration.
+- **In-Memory Blob Download Pipeline**: Guarantees 100% reliable `.mp4` downloads across TikTok, Facebook Reels, and Instagram without 403 Forbidden or `.htm` errors.
+- **Chrome Debugger Protocol Execution**: Dispatches 100% genuine `isTrusted: true` hardware events.
+
 
 
 ### 1. Problem Statement
