@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Network Image Sniffer & AI Toolkit",
-  "version": "3.0.0",
-  "description": "High-performance Network Layer media sniffer with HLS Streaming Video Stitcher, Native Hardware Auto-Slide, Lightbox Preview, Multi-Tab Isolation, and batch downloader.",
+  "version": "3.1.0",
+  "description": "High-performance Network Layer media sniffer with Multi-Block Hardware Key Macro Studio, HLS Video Stitcher, Lightbox Preview, and batch downloader.",
   "icons": {
     "16": "icons/icon-16.png",
     "32": "icons/icon-32.png",

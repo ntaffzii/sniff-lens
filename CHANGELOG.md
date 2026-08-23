@@ -4,9 +4,24 @@ All notable changes to the **Network Image Sniffer & AI Toolkit (SniffLens)** pr
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.1.0] - 2026-08-23
+### Added
+- **Multi-Block Hardware Key Macro Studio**:
+  - Full directional keyboard automation: **➡️ Right (`ArrowRight`)**, **⬇️ Down (`ArrowDown` for TikTok/Reels)**, **⬅️ Left (`ArrowLeft`)**, **⬆️ Up (`ArrowUp`)**, **⇟ `PageDown`**, and **␣ `Spacebar`**.
+  - **Visual Sequence Chain Builder**: Create multi-step macro sequences (e.g. Step 1: Right 1.5s -> Step 2: Right 1.5s -> Step 3: Down 3.0s).
+  - **Independent Delay Control**: Adjust wait time per action block individually in seconds.
+  - **4 Built-in Quick Presets**:
+    - 🖼️ Facebook Carousel (`ArrowRight` 1.8s)
+    - 📱 TikTok / Reels Feed (`ArrowDown` 3.0s)
+    - 🔲 Grid Album Explorer (3x `Right` 1.5s, 1x `Down` 2.5s)
+    - 📰 Long Feed Scroller (`PageDown` 3.5s)
+  - **Chrome Debugger Protocol Execution Engine**: 100% genuine `isTrusted: true` hardware events that bypass website bot detection.
+  - **Direct Panel In-Memory Blob Downloader**: Guarantees zero HTTP 403 Forbidden or `.htm` download errors when capturing TikTok and Facebook videos.
+
 ---
 
 ## [3.0.0] - 2026-08-23
+
 ### Added
 - **HLS Streaming Video Stitcher Engine (Phase 1 Complete)**:
   - Intercepts `.m3u8` master and media playlists directly from network traffic.

@@ -429,42 +429,57 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
 
   // ==========================================================================
-  // Native Hardware Input Engine (chrome.debugger - isTrusted: true 100%)
+  // Multi-Block Hardware Key Macro Studio Engine (chrome.debugger - isTrusted: true)
   // ==========================================================================
 
-  // กดปุ่ม [→] ฮาร์ดแวร์แท้ 1 ครั้ง
-  if (msg.type === "NATIVE_TRIGGER_ARROW_RIGHT") {
+  // เริ่มต้นรันชุดคำสั่ง Macro แบบหลายบล็อก (หรือลูปเดี่ยว)
+  if (msg.type === "START_MACRO_SEQUENCE" || msg.type === "NATIVE_START_AUTO_SLIDE") {
     const targetTabId = msg.tabId;
     if (!targetTabId) {
       sendResponse({ status: "error", error: "No tabId provided" });
       return true;
     }
-    sendNativeArrowRightKey(targetTabId).then((success) => {
+    const blocks = msg.blocks || (msg.intervalMs ? [{ id: "b1", key: "ArrowRight", delayMs: msg.intervalMs }] : null);
+    const loopMode = msg.loopMode !== false;
+    startMacroSequence(targetTabId, blocks, loopMode);
+    sendResponse({ status: "started", tabId: targetTabId });
+    return true;
+  }
+
+  // หยุดการรันชุดคำสั่ง Macro
+  if (msg.type === "STOP_MACRO_SEQUENCE" || msg.type === "NATIVE_STOP_AUTO_SLIDE") {
+    const targetTabId = msg.tabId;
+    if (targetTabId) {
+      stopMacroSequence(targetTabId);
+    }
+    sendResponse({ status: "stopped" });
+    return true;
+  }
+
+  // กดปุ่มคีย์ลัดฮาร์ดแวร์แท้ 1 ครั้ง (ระบุปุ่มได้)
+  if (msg.type === "STEP_MACRO_SINGLE" || msg.type === "NATIVE_TRIGGER_ARROW_RIGHT") {
+    const targetTabId = msg.tabId;
+    const keyName = msg.key || "ArrowRight";
+    if (!targetTabId) {
+      sendResponse({ status: "error", error: "No tabId provided" });
+      return true;
+    }
+    stepMacroSingle(targetTabId, keyName).then((success) => {
       sendResponse({ status: success ? "ok" : "error" });
     });
     return true;
   }
 
-  // เริ่มต้น Loop กด [→] ฮาร์ดแวร์แท้อัตโนมัติ
-  if (msg.type === "NATIVE_START_AUTO_SLIDE") {
+  // ขอสถานะการทำงานของ Macro Runner
+  if (msg.type === "GET_MACRO_STATUS" || msg.type === "NATIVE_GET_STATUS") {
     const targetTabId = msg.tabId;
-    const intervalMs = msg.intervalMs || 2000;
-    if (!targetTabId) {
-      sendResponse({ status: "error", error: "No tabId provided" });
-      return true;
-    }
-    startNativeAutoSlide(targetTabId, intervalMs);
-    sendResponse({ status: "started", intervalMs });
-    return true;
-  }
-
-  // หยุด Loop กดอัตโนมัติ
-  if (msg.type === "NATIVE_STOP_AUTO_SLIDE") {
-    const targetTabId = msg.tabId;
-    if (targetTabId) {
-      stopNativeAutoSlide(targetTabId);
-    }
-    sendResponse({ status: "stopped" });
+    const runner = targetTabId ? activeMacroLoops[targetTabId] : null;
+    sendResponse({
+      isActive: Boolean(runner),
+      currentStepIndex: runner?.currentStepIndex || 0,
+      totalSteps: runner?.blocks?.length || 1,
+      loopMode: runner?.loopMode !== false
+    });
     return true;
   }
 
@@ -491,12 +506,22 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
 });
 
-
 // ============================================================================
 // Chrome Debugger Protocol Implementation for 100% Genuine isTrusted Keys
 // ============================================================================
 const attachedTabs = new Set();
-const nativeAutoSlideLoops = {};
+const activeMacroLoops = {};
+
+const KEY_MAP = {
+  ArrowRight: { code: "ArrowRight", key: "ArrowRight", keyCode: 39 },
+  ArrowLeft:  { code: "ArrowLeft",  key: "ArrowLeft",  keyCode: 37 },
+  ArrowDown:  { code: "ArrowDown",  key: "ArrowDown",  keyCode: 40 },
+  ArrowUp:    { code: "ArrowUp",    key: "ArrowUp",    keyCode: 38 },
+  PageDown:   { code: "PageDown",   key: "PageDown",   keyCode: 34 },
+  PageUp:     { code: "PageUp",     key: "PageUp",     keyCode: 33 },
+  Space:      { code: "Space",      key: " ",          keyCode: 32 },
+  Enter:      { code: "Enter",      key: "Enter",      keyCode: 13 }
+};
 
 async function ensureDebuggerAttached(tabId) {
   if (attachedTabs.has(tabId)) return true;
@@ -527,9 +552,9 @@ async function detachDebuggerSafe(tabId) {
 chrome.debugger.onDetach.addListener((source) => {
   if (source?.tabId) {
     attachedTabs.delete(source.tabId);
-    stopNativeAutoSlide(source.tabId);
+    stopMacroSequence(source.tabId);
     chrome.runtime.sendMessage({
-      type: "NATIVE_SLIDE_STOPPED",
+      type: "MACRO_SEQUENCE_STOPPED",
       tabId: source.tabId
     }).catch(() => {});
   }
@@ -538,33 +563,34 @@ chrome.debugger.onDetach.addListener((source) => {
 /**
  * ส่ง Native Hardware Key Event (isTrusted: true) ไปยัง Browser Engine
  */
-async function sendNativeArrowRightKey(tabId) {
+async function sendNativeKey(tabId, keyName = "ArrowRight") {
+  const keyConfig = KEY_MAP[keyName] || KEY_MAP.ArrowRight;
   const attached = await ensureDebuggerAttached(tabId);
   if (!attached) return false;
 
   try {
-    // 1. rawKeyDown (KeyCode 39, ArrowRight)
+    // 1. rawKeyDown
     await chrome.debugger.sendCommand({ tabId }, "Input.dispatchKeyEvent", {
       type: "rawKeyDown",
-      windowsVirtualKeyCode: 39,
-      nativeVirtualKeyCode: 39,
-      macCharCode: 39,
-      code: "ArrowRight",
-      key: "ArrowRight",
-      unmodifiedText: "",
-      text: ""
+      windowsVirtualKeyCode: keyConfig.keyCode,
+      nativeVirtualKeyCode: keyConfig.keyCode,
+      macCharCode: keyConfig.keyCode,
+      code: keyConfig.code,
+      key: keyConfig.key,
+      unmodifiedText: keyConfig.key.length === 1 ? keyConfig.key : "",
+      text: keyConfig.key.length === 1 ? keyConfig.key : ""
     });
 
     // 2. keyUp
     await chrome.debugger.sendCommand({ tabId }, "Input.dispatchKeyEvent", {
       type: "keyUp",
-      windowsVirtualKeyCode: 39,
-      nativeVirtualKeyCode: 39,
-      macCharCode: 39,
-      code: "ArrowRight",
-      key: "ArrowRight",
-      unmodifiedText: "",
-      text: ""
+      windowsVirtualKeyCode: keyConfig.keyCode,
+      nativeVirtualKeyCode: keyConfig.keyCode,
+      macCharCode: keyConfig.keyCode,
+      code: keyConfig.code,
+      key: keyConfig.key,
+      unmodifiedText: keyConfig.key.length === 1 ? keyConfig.key : "",
+      text: keyConfig.key.length === 1 ? keyConfig.key : ""
     });
 
     return true;
@@ -574,42 +600,88 @@ async function sendNativeArrowRightKey(tabId) {
   }
 }
 
-function startNativeAutoSlide(tabId, intervalMs = 2000) {
-  stopNativeAutoSlide(tabId);
-  const ms = Math.max(500, intervalMs);
+function startMacroSequence(tabId, blocks = [], loopMode = true) {
+  stopMacroSequence(tabId);
+  if (!blocks || !blocks.length) {
+    blocks = [{ id: "b1", key: "ArrowRight", delayMs: 2000 }];
+  }
 
-  // กดครั้งแรกทันที
-  sendNativeArrowRightKey(tabId);
+  activeMacroLoops[tabId] = {
+    blocks,
+    loopMode: Boolean(loopMode),
+    currentStepIndex: 0,
+    timer: null,
+    isCancelled: false
+  };
 
-  const timer = setInterval(async () => {
-    const success = await sendNativeArrowRightKey(tabId);
-    if (!success) {
-      stopNativeAutoSlide(tabId);
-      return;
-    }
-    chrome.runtime.sendMessage({
-      type: "NATIVE_SLIDE_TICK",
-      tabId,
-      timestamp: Date.now()
-    }).catch(() => {});
-  }, ms);
-
-  nativeAutoSlideLoops[tabId] = { timer, intervalMs: ms };
+  runNextMacroStep(tabId);
 }
 
-function stopNativeAutoSlide(tabId) {
-  if (nativeAutoSlideLoops[tabId]) {
-    clearInterval(nativeAutoSlideLoops[tabId].timer);
-    delete nativeAutoSlideLoops[tabId];
+async function runNextMacroStep(tabId) {
+  const runner = activeMacroLoops[tabId];
+  if (!runner || runner.isCancelled) return;
+
+  const block = runner.blocks[runner.currentStepIndex];
+  if (!block) return;
+
+  // Broadcast step active
+  chrome.runtime.sendMessage({
+    type: "MACRO_STEP_TICK",
+    tabId,
+    stepIndex: runner.currentStepIndex,
+    totalSteps: runner.blocks.length,
+    key: block.key,
+    delayMs: block.delayMs
+  }).catch(() => {});
+
+  // Dispatch native hardware key
+  const success = await sendNativeKey(tabId, block.key);
+  if (!success) {
+    stopMacroSequence(tabId);
+    return;
+  }
+
+  // Schedule next step
+  const delay = Math.max(300, block.delayMs || 1500);
+  runner.timer = setTimeout(() => {
+    if (!activeMacroLoops[tabId] || activeMacroLoops[tabId].isCancelled) return;
+
+    let nextIndex = runner.currentStepIndex + 1;
+    if (nextIndex >= runner.blocks.length) {
+      if (runner.loopMode) {
+        nextIndex = 0;
+      } else {
+        stopMacroSequence(tabId);
+        chrome.runtime.sendMessage({ type: "MACRO_SEQUENCE_COMPLETED", tabId }).catch(() => {});
+        return;
+      }
+    }
+
+    runner.currentStepIndex = nextIndex;
+    runNextMacroStep(tabId);
+  }, delay);
+}
+
+function stopMacroSequence(tabId) {
+  if (activeMacroLoops[tabId]) {
+    activeMacroLoops[tabId].isCancelled = true;
+    if (activeMacroLoops[tabId].timer) clearTimeout(activeMacroLoops[tabId].timer);
+    delete activeMacroLoops[tabId];
   }
   detachDebuggerSafe(tabId);
 }
 
+async function stepMacroSingle(tabId, keyName = "ArrowRight") {
+  const success = await sendNativeKey(tabId, keyName);
+  return success;
+}
+
 // หยุดการทำงานและเคลียร์ข้อมูลเมื่อแท็บถูกปิด
 chrome.tabs.onRemoved.addListener((tabId) => {
-  stopNativeAutoSlide(tabId);
-  chrome.storage.session.remove(["captured-" + tabId, "tab_settings_" + tabId]).catch(() => {});
+  stopMacroSequence(tabId);
+  chrome.storage.session.remove(["captured-" + tabId, "tab_settings_" + tabId, "tab_macro_" + tabId]).catch(() => {});
 });
+
 
 
 

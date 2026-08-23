@@ -726,33 +726,55 @@
       </button>
     </div>
 
-    <!-- Universal Native Hardware Auto-Slide Key Simulator Bar -->
+    <!-- Universal Native Hardware Macro Sequence Studio Bar -->
     <div id="fb-assistant-bar" style="background: linear-gradient(135deg, rgba(37, 99, 235, 0.2), rgba(16, 185, 129, 0.1)); border: 1px solid rgba(59, 130, 246, 0.4); border-radius: 8px; padding: 7px 10px; display: flex; flex-direction: column; gap: 6px;">
       <div style="display: flex; justify-content: space-between; align-items: center;">
         <span style="font-size: 11px; font-weight: 700; color: #60a5fa; display: flex; align-items: center; gap: 4px;">
-          <span>⚡ Native Auto-Slide (Hardware Key [→])</span>
+          <span>⚡ Hardware Key Macro Studio</span>
         </span>
-        <span id="fb-slide-indicator" style="font-size: 9.5px; color: #34d399; background: rgba(16, 185, 129, 0.2); border: 1px solid rgba(16, 185, 129, 0.3); padding: 1px 6px; border-radius: 4px; font-weight: 600;">isTrusted: true</span>
+        <div style="display: flex; gap: 4px; align-items: center;">
+          <span id="macro-step-badge" style="font-size: 9px; color: #38bdf8; background: rgba(56, 189, 248, 0.15); border: 1px solid rgba(56, 189, 248, 0.3); padding: 1px 5px; border-radius: 4px; font-weight: 700;">1 Step</span>
+          <span id="fb-slide-indicator" style="font-size: 9.5px; color: #34d399; background: rgba(16, 185, 129, 0.2); border: 1px solid rgba(16, 185, 129, 0.3); padding: 1px 6px; border-radius: 4px; font-weight: 600;">isTrusted: true</span>
+        </div>
       </div>
+
+      <!-- Quick Direction Selector Buttons -->
+      <div style="display: flex; gap: 4px; align-items: center;">
+        <div style="display: flex; gap: 3px; background: #0f172a; border: 1px solid #334155; border-radius: 6px; padding: 2px; flex: 1.5;">
+          <button class="macro-dir-btn" id="macro-btn-right" data-dir="ArrowRight" title="Right Arrow (Carousel / Albums)" style="flex: 1; background: #2563eb; color: #fff; border: none; border-radius: 4px; padding: 3px 4px; font-size: 9.5px; font-weight: 700; cursor: pointer;">➡️ ขวา</button>
+          <button class="macro-dir-btn" id="macro-btn-down" data-dir="ArrowDown" title="Down Arrow (TikTok / Reels Feed)" style="flex: 1; background: transparent; color: #94a3b8; border: none; border-radius: 4px; padding: 3px 4px; font-size: 9.5px; font-weight: 700; cursor: pointer;">⬇️ ล่าง</button>
+          <button class="macro-dir-btn" id="macro-btn-left" data-dir="ArrowLeft" title="Left Arrow (Previous Photo)" style="flex: 1; background: transparent; color: #94a3b8; border: none; border-radius: 4px; padding: 3px 4px; font-size: 9.5px; font-weight: 700; cursor: pointer;">⬅️ ซ้าย</button>
+          <button class="macro-dir-btn" id="macro-btn-up" data-dir="ArrowUp" title="Up Arrow" style="flex: 1; background: transparent; color: #94a3b8; border: none; border-radius: 4px; padding: 3px 4px; font-size: 9.5px; font-weight: 700; cursor: pointer;">⬆️ บน</button>
+        </div>
+        <button id="open-macro-studio-btn" style="flex: 1.1; background: #1e1b4b; border: 1px solid #6366f1; color: #a5b4fc; border-radius: 6px; padding: 4px 6px; font-size: 10px; font-weight: 700; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 3px;" title="Build multi-step block sequence">
+          <span>🧩 Multi-Block</span>
+        </button>
+      </div>
+
+      <!-- Controls Row -->
       <div style="display: flex; gap: 5px; align-items: center;">
         <button id="fb-play-btn" style="flex: 1.3; background: #2563eb; color: #fff; border: none; border-radius: 6px; padding: 5px 8px; font-size: 10.5px; font-weight: 600; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 4px; transition: all 0.15s;">
           <span id="fb-play-icon">▶️</span> <span id="fb-play-text">Auto-Play</span>
         </button>
-        <button id="fb-next-btn" style="flex: 1; background: #1e293b; color: #e2e8f0; border: 1px solid #334155; border-radius: 6px; padding: 5px 8px; font-size: 10.5px; font-weight: 600; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 4px;" title="Send single native [→] key">
-          <span>➡️ Step Once</span>
+        <button id="fb-next-btn" style="flex: 1; background: #1e293b; color: #e2e8f0; border: 1px solid #334155; border-radius: 6px; padding: 5px 8px; font-size: 10.5px; font-weight: 600; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 4px;" title="Send current key step once">
+          <span>⏯️ Step Once</span>
         </button>
-        <select id="fb-speed-select" style="flex: 0.9; background: #0f172a; border: 1px solid #334155; border-radius: 6px; padding: 4px 6px; color: #94a3b8; font-size: 10px; cursor: pointer;" title="Auto-slide interval speed">
+        <select id="fb-speed-select" style="flex: 0.9; background: #0f172a; border: 1px solid #334155; border-radius: 6px; padding: 4px 6px; color: #94a3b8; font-size: 10px; cursor: pointer;" title="Step delay">
           <option value="800">0.8s</option>
           <option value="1200">1.2s</option>
           <option value="1800">1.8s</option>
           <option value="2200" selected>2.2s</option>
           <option value="3000">3.0s</option>
+          <option value="4000">4.0s</option>
         </select>
       </div>
-      <div style="font-size: 9px; color: #94a3b8; line-height: 1.3;">
-        💡 Dispatches native hardware key events (isTrusted = true) compatible with Facebook and photo viewers.
+
+      <!-- Active Running Steps Progress Line -->
+      <div id="macro-active-steps-container" style="display: none; align-items: center; gap: 4px; overflow-x: auto; padding: 2px 0;">
+        <!-- Dynamic block badges injected here -->
       </div>
     </div>
+
 
     <!-- Search and Size Filter -->
     <div class="search-row">
@@ -932,6 +954,58 @@
       </div>
     </div>
   </div>
+
+  <!-- Macro Studio Sequence Builder Modal -->
+  <div id="macro-studio-modal" class="settings-modal" style="position: fixed; inset: 0; background: rgba(0, 0, 0, 0.88); backdrop-filter: blur(6px); z-index: 115; display: none; align-items: center; justify-content: center; padding: 16px;">
+    <div class="settings-dialog" style="max-width: 380px; max-height: 85vh; display: flex; flex-direction: column;">
+      <div class="settings-dialog-header" style="background: #1e1b4b; border-bottom: 1px solid #4338ca;">
+        <span class="settings-dialog-title" style="color: #a5b4fc; display: flex; align-items: center; gap: 6px;">
+          <span>🧩 Multi-Block Hardware Key Macro Studio</span>
+        </span>
+        <button class="lightbox-close-btn" id="macro-modal-close-btn">✕</button>
+      </div>
+
+      <div class="settings-dialog-body" style="overflow-y: auto; gap: 10px;">
+        <!-- Presets -->
+        <div style="display: flex; flex-direction: column; gap: 4px;">
+          <span style="font-size: 10px; font-weight: 700; color: #a1a1aa;">🚀 Built-in Sequence Presets:</span>
+          <div class="chip-group">
+            <button class="chip-btn" id="preset-macro-fb">🖼️ Facebook Carousel (➡️ 1.8s)</button>
+            <button class="chip-btn" id="preset-macro-tiktok">📱 TikTok/Reels Feed (⬇️ 3.0s)</button>
+            <button class="chip-btn" id="preset-macro-grid">🔲 Grid (3x ➡️, 1x ⬇️)</button>
+            <button class="chip-btn" id="preset-macro-scroll">📰 PageDown (⇟ 3.5s)</button>
+          </div>
+        </div>
+
+        <!-- Block List Header -->
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 4px;">
+          <span style="font-size: 11px; font-weight: 700; color: #e4e4e7;">Action Block Sequence:</span>
+          <span id="macro-blocks-count-label" style="font-size: 10px; color: #38bdf8;">1 Block</span>
+        </div>
+
+        <!-- Dynamically Rendered Macro Blocks -->
+        <div id="macro-blocks-list" style="display: flex; flex-direction: column; gap: 6px; max-height: 200px; overflow-y: auto; padding-right: 2px;">
+        </div>
+
+        <!-- Add Block Button -->
+        <button id="add-macro-block-btn" style="background: rgba(99, 102, 241, 0.15); border: 1px dashed #6366f1; color: #a5b4fc; border-radius: 6px; padding: 6px 10px; font-size: 11px; font-weight: 600; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px;">
+          <span>➕ Add Next Action Block</span>
+        </button>
+
+        <!-- Loop Setting -->
+        <label class="checkbox-setting" style="margin-top: 4px;">
+          <input type="checkbox" id="macro-loop-mode-cb" checked />
+          <span>🔁 Continuous Loop (Repeat sequence indefinitely)</span>
+        </label>
+      </div>
+
+      <div class="settings-dialog-footer">
+        <button class="btn-secondary" id="macro-modal-cancel-btn">Cancel</button>
+        <button class="btn-primary" id="macro-modal-apply-btn" style="background: #4f46e5;">💾 Save & Apply Sequence</button>
+      </div>
+    </div>
+  </div>
+
 
   <!-- Confirmation Modal (Before Batch Download) -->
   <div id="confirm-download-modal" class="settings-modal" style="position: fixed; inset: 0; background: rgba(0,0,0,0.88); backdrop-filter: blur(6px); z-index: 120; display: none; align-items: center; justify-content: center; padding: 16px;">

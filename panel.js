@@ -1060,7 +1060,7 @@ document.getElementById("filter-type")?.addEventListener("change", render);
 document.getElementById("filter-size")?.addEventListener("change", render);
 
 // ============================================================================
-// Universal Auto-Slide Key Simulator Controller
+// Multi-Block Hardware Key Macro Studio Controller
 // ============================================================================
 const fbAssistantBar = document.getElementById("fb-assistant-bar");
 const fbPlayBtn = document.getElementById("fb-play-btn");
@@ -1069,9 +1069,298 @@ const fbPlayText = document.getElementById("fb-play-text");
 const fbNextBtn = document.getElementById("fb-next-btn");
 const fbSpeedSelect = document.getElementById("fb-speed-select");
 const fbSlideIndicator = document.getElementById("fb-slide-indicator");
+const macroStepBadge = document.getElementById("macro-step-badge");
+const macroActiveStepsContainer = document.getElementById("macro-active-steps-container");
 
-let isFbPlaying = false;
+// Macro Studio Modal Elements
+const macroStudioModal = document.getElementById("macro-studio-modal");
+const openMacroStudioBtn = document.getElementById("open-macro-studio-btn");
+const macroModalCloseBtn = document.getElementById("macro-modal-close-btn");
+const macroModalCancelBtn = document.getElementById("macro-modal-cancel-btn");
+const macroModalApplyBtn = document.getElementById("macro-modal-apply-btn");
+const macroBlocksList = document.getElementById("macro-blocks-list");
+const addMacroBlockBtn = document.getElementById("add-macro-block-btn");
+const macroLoopModeCb = document.getElementById("macro-loop-mode-cb");
+const macroBlocksCountLabel = document.getElementById("macro-blocks-count-label");
 
+// Direction Quick Buttons
+const dirButtons = {
+  ArrowRight: document.getElementById("macro-btn-right"),
+  ArrowDown: document.getElementById("macro-btn-down"),
+  ArrowLeft: document.getElementById("macro-btn-left"),
+  ArrowUp: document.getElementById("macro-btn-up")
+};
+
+// Macro State
+let currentMacroBlocks = [
+  { id: "b_" + Date.now(), key: "ArrowRight", delayMs: 2200 }
+];
+let currentMacroDirection = "ArrowRight";
+let isMacroPlaying = false;
+let isMacroLoop = true;
+
+const KEY_LABELS = {
+  ArrowRight: "➡️ ขวา (Right)",
+  ArrowDown: "⬇️ ล่าง (Down / Reels)",
+  ArrowLeft: "⬅️ ซ้าย (Left)",
+  ArrowUp: "⬆️ บน (Up)",
+  PageDown: "⇟ PageDown (Feed)",
+  PageUp: "⇞ PageUp",
+  Space: "␣ Spacebar",
+  Enter: "↵ Enter"
+};
+
+// อัปเดตสีปุ่มทิศทางด่วน
+function updateDirButtonsUI(activeDir) {
+  Object.keys(dirButtons).forEach((dir) => {
+    const btn = dirButtons[dir];
+    if (!btn) return;
+    if (dir === activeDir && currentMacroBlocks.length === 1) {
+      btn.style.background = "#2563eb";
+      btn.style.color = "#fff";
+    } else {
+      btn.style.background = "transparent";
+      btn.style.color = "#94a3b8";
+    }
+  });
+}
+
+// กดเลือกทิศทางด่วน
+Object.keys(dirButtons).forEach((dir) => {
+  dirButtons[dir]?.addEventListener("click", () => {
+    currentMacroDirection = dir;
+    const speed = parseInt(fbSpeedSelect?.value || "2200", 10) || 2200;
+    currentMacroBlocks = [{ id: "b_" + Date.now(), key: dir, delayMs: speed }];
+    updateDirButtonsUI(dir);
+    updateMacroBadge();
+    saveTabMacroState();
+
+    if (isMacroPlaying && currentTabId) {
+      chrome.runtime.sendMessage({
+        type: "START_MACRO_SEQUENCE",
+        tabId: currentTabId,
+        blocks: currentMacroBlocks,
+        loopMode: isMacroLoop
+      });
+    }
+    showToast(`🎯 Set direction to ${KEY_LABELS[dir] || dir}`);
+  });
+});
+
+function updateMacroBadge() {
+  if (!macroStepBadge) return;
+  const count = currentMacroBlocks.length;
+  if (count === 1) {
+    const key = currentMacroBlocks[0].key;
+    const icon = key === "ArrowDown" ? "⬇️" : (key === "ArrowLeft" ? "⬅️" : (key === "ArrowUp" ? "⬆️" : "➡️"));
+    macroStepBadge.textContent = `1 Step (${icon})`;
+  } else {
+    macroStepBadge.textContent = `${count} Steps Chain`;
+  }
+}
+
+// ============================================================================
+// Macro Studio Modal Builder & Renderer
+// ============================================================================
+function renderMacroBlocksInModal() {
+  if (!macroBlocksList) return;
+  macroBlocksList.innerHTML = "";
+
+  if (macroBlocksCountLabel) {
+    macroBlocksCountLabel.textContent = `${currentMacroBlocks.length} Block${currentMacroBlocks.length > 1 ? "s" : ""}`;
+  }
+
+  currentMacroBlocks.forEach((block, idx) => {
+    const row = document.createElement("div");
+    row.style.display = "flex";
+    row.style.alignItems = "center";
+    row.style.gap = "6px";
+    row.style.background = "#141417";
+    row.style.border = "1px solid #27272a";
+    row.style.borderRadius = "6px";
+    row.style.padding = "6px 8px";
+
+    // Step Number Badge
+    const numBadge = document.createElement("span");
+    numBadge.style.fontSize = "10px";
+    numBadge.style.fontWeight = "700";
+    numBadge.style.color = "#a5b4fc";
+    numBadge.style.minWidth = "42px";
+    numBadge.textContent = `Step ${idx + 1}`;
+    row.appendChild(numBadge);
+
+    // Key Dropdown
+    const keySelect = document.createElement("select");
+    keySelect.className = "form-input";
+    keySelect.style.flex = "1.6";
+    keySelect.style.padding = "3px 5px";
+    keySelect.style.fontSize = "10px";
+
+    Object.keys(KEY_LABELS).forEach((k) => {
+      const opt = document.createElement("option");
+      opt.value = k;
+      opt.textContent = KEY_LABELS[k];
+      if (block.key === k) opt.selected = true;
+      keySelect.appendChild(opt);
+    });
+
+    keySelect.addEventListener("change", () => {
+      block.key = keySelect.value;
+    });
+    row.appendChild(keySelect);
+
+    // Delay Input (Seconds)
+    const delayContainer = document.createElement("div");
+    delayContainer.style.display = "flex";
+    delayContainer.style.alignItems = "center";
+    delayContainer.style.gap = "3px";
+    delayContainer.style.flex = "1";
+
+    const delayInput = document.createElement("input");
+    delayInput.type = "number";
+    delayInput.className = "form-input";
+    delayInput.style.width = "46px";
+    delayInput.style.padding = "3px 4px";
+    delayInput.style.fontSize = "10px";
+    delayInput.min = "0.3";
+    delayInput.step = "0.1";
+    delayInput.value = (block.delayMs / 1000).toFixed(1);
+
+    delayInput.addEventListener("input", () => {
+      const sec = parseFloat(delayInput.value) || 1.5;
+      block.delayMs = Math.round(sec * 1000);
+    });
+
+    const secLabel = document.createElement("span");
+    secLabel.style.fontSize = "9.5px";
+    secLabel.style.color = "#71717a";
+    secLabel.textContent = "sec";
+
+    delayContainer.appendChild(delayInput);
+    delayContainer.appendChild(secLabel);
+    row.appendChild(delayContainer);
+
+    // Delete Button
+    if (currentMacroBlocks.length > 1) {
+      const delBtn = document.createElement("button");
+      delBtn.textContent = "🗑️";
+      delBtn.style.background = "transparent";
+      delBtn.style.border = "none";
+      delBtn.style.cursor = "pointer";
+      delBtn.style.fontSize = "11px";
+      delBtn.title = "Delete this step";
+      delBtn.addEventListener("click", () => {
+        currentMacroBlocks.splice(idx, 1);
+        renderMacroBlocksInModal();
+      });
+      row.appendChild(delBtn);
+    }
+
+    macroBlocksList.appendChild(row);
+  });
+}
+
+// Add New Block Button in Modal
+addMacroBlockBtn?.addEventListener("click", () => {
+  const lastBlock = currentMacroBlocks[currentMacroBlocks.length - 1];
+  currentMacroBlocks.push({
+    id: "b_" + Date.now() + "_" + Math.random().toString(36).slice(2, 5),
+    key: lastBlock ? lastBlock.key : "ArrowRight",
+    delayMs: lastBlock ? lastBlock.delayMs : 2000
+  });
+  renderMacroBlocksInModal();
+});
+
+// Open Modal
+openMacroStudioBtn?.addEventListener("click", () => {
+  if (macroLoopModeCb) macroLoopModeCb.checked = isMacroLoop;
+  renderMacroBlocksInModal();
+  if (macroStudioModal) macroStudioModal.style.display = "flex";
+});
+
+// Close Modal
+function closeMacroStudioModal() {
+  if (macroStudioModal) macroStudioModal.style.display = "none";
+}
+macroModalCloseBtn?.addEventListener("click", closeMacroStudioModal);
+macroModalCancelBtn?.addEventListener("click", closeMacroStudioModal);
+
+// Apply Macro Sequence
+macroModalApplyBtn?.addEventListener("click", () => {
+  if (macroLoopModeCb) isMacroLoop = macroLoopModeCb.checked;
+  closeMacroStudioModal();
+  updateMacroBadge();
+  updateDirButtonsUI(currentMacroBlocks.length === 1 ? currentMacroBlocks[0].key : "");
+  saveTabMacroState();
+
+  if (isMacroPlaying && currentTabId) {
+    chrome.runtime.sendMessage({
+      type: "START_MACRO_SEQUENCE",
+      tabId: currentTabId,
+      blocks: currentMacroBlocks,
+      loopMode: isMacroLoop
+    });
+  }
+  showToast(`✅ Applied ${currentMacroBlocks.length} Macro Action Blocks!`);
+});
+
+// Built-in Presets in Modal
+document.getElementById("preset-macro-fb")?.addEventListener("click", () => {
+  currentMacroBlocks = [{ id: "b_fb", key: "ArrowRight", delayMs: 1800 }];
+  renderMacroBlocksInModal();
+});
+document.getElementById("preset-macro-tiktok")?.addEventListener("click", () => {
+  currentMacroBlocks = [{ id: "b_tt", key: "ArrowDown", delayMs: 3000 }];
+  renderMacroBlocksInModal();
+});
+document.getElementById("preset-macro-grid")?.addEventListener("click", () => {
+  currentMacroBlocks = [
+    { id: "b_g1", key: "ArrowRight", delayMs: 1500 },
+    { id: "b_g2", key: "ArrowRight", delayMs: 1500 },
+    { id: "b_g3", key: "ArrowRight", delayMs: 1500 },
+    { id: "b_g4", key: "ArrowDown", delayMs: 2500 }
+  ];
+  renderMacroBlocksInModal();
+});
+document.getElementById("preset-macro-scroll")?.addEventListener("click", () => {
+  currentMacroBlocks = [{ id: "b_scroll", key: "PageDown", delayMs: 3500 }];
+  renderMacroBlocksInModal();
+});
+
+// Save & Load Tab Macro Profiles
+async function saveTabMacroState() {
+  if (!currentTabId) return;
+  const key = "tab_macro_" + currentTabId;
+  await chrome.storage.session.set({
+    [key]: {
+      blocks: currentMacroBlocks,
+      loopMode: isMacroLoop,
+      direction: currentMacroDirection
+    }
+  });
+}
+
+async function loadTabMacroState(tabId) {
+  if (!tabId) return;
+  const key = "tab_macro_" + tabId;
+  const store = await chrome.storage.session.get(key);
+  const data = store[key];
+  if (data?.blocks && data.blocks.length) {
+    currentMacroBlocks = data.blocks;
+    isMacroLoop = data.loopMode !== false;
+    currentMacroDirection = data.direction || "ArrowRight";
+  } else {
+    currentMacroBlocks = [{ id: "b_init", key: "ArrowRight", delayMs: 2200 }];
+    isMacroLoop = true;
+    currentMacroDirection = "ArrowRight";
+  }
+  updateMacroBadge();
+  updateDirButtonsUI(currentMacroBlocks.length === 1 ? currentMacroBlocks[0].key : "");
+}
+
+// ============================================================================
+// Auto-Play / Stop & Step Execution
+// ============================================================================
 async function checkAutoSlideTabStatus() {
   if (!currentTabId || !fbAssistantBar) return;
   try {
@@ -1080,31 +1369,31 @@ async function checkAutoSlideTabStatus() {
 
     if (isSupported) {
       fbAssistantBar.style.display = "flex";
-      chrome.runtime.sendMessage({ type: "NATIVE_GET_STATUS", tabId: currentTabId }, (res) => {
+      chrome.runtime.sendMessage({ type: "GET_MACRO_STATUS", tabId: currentTabId }, (res) => {
         if (res?.isActive) {
-          setFbPlayState(true);
+          setFbPlayState(true, res.currentStepIndex, res.totalSteps);
         } else {
           setFbPlayState(false);
         }
       });
     } else {
       fbAssistantBar.style.display = "none";
-      if (isFbPlaying) setFbPlayState(false);
+      if (isMacroPlaying) setFbPlayState(false);
     }
   } catch {
     fbAssistantBar.style.display = "none";
   }
 }
 
-function setFbPlayState(playing) {
-  isFbPlaying = playing;
+function setFbPlayState(playing, stepIdx = 0, totalSteps = 1) {
+  isMacroPlaying = playing;
   if (!fbPlayBtn || !fbPlayIcon || !fbPlayText || !fbSlideIndicator) return;
 
   if (playing) {
     fbPlayBtn.style.background = "#059669";
     fbPlayIcon.textContent = "⏸️";
     fbPlayText.textContent = "Stop";
-    fbSlideIndicator.textContent = "● Auto-pressing [→]...";
+    fbSlideIndicator.textContent = `● Step ${stepIdx + 1}/${totalSteps}`;
     fbSlideIndicator.style.background = "rgba(16, 185, 129, 0.25)";
     fbSlideIndicator.style.color = "#34d399";
   } else {
@@ -1121,22 +1410,22 @@ function setFbPlayState(playing) {
 fbPlayBtn?.addEventListener("click", async () => {
   if (!currentTabId) return;
 
-  if (!isFbPlaying) {
-    const speed = parseInt(fbSpeedSelect?.value || "2200", 10) || 2200;
+  if (!isMacroPlaying) {
     chrome.runtime.sendMessage({
-      type: "NATIVE_START_AUTO_SLIDE",
+      type: "START_MACRO_SEQUENCE",
       tabId: currentTabId,
-      intervalMs: speed
+      blocks: currentMacroBlocks,
+      loopMode: isMacroLoop
     }, (res) => {
       if (res?.status === "started") {
-        setFbPlayState(true);
-        showToast(`⚡ Hardware [→] auto-slide active (every ${(speed / 1000).toFixed(1)}s)`);
+        setFbPlayState(true, 0, currentMacroBlocks.length);
+        showToast(`⚡ Macro sequence active (${currentMacroBlocks.length} steps)`);
       }
     });
   } else {
-    chrome.runtime.sendMessage({ type: "NATIVE_STOP_AUTO_SLIDE", tabId: currentTabId }, () => {
+    chrome.runtime.sendMessage({ type: "STOP_MACRO_SEQUENCE", tabId: currentTabId }, () => {
       setFbPlayState(false);
-      showToast("⏸️ Auto-slide stopped");
+      showToast("⏸️ Macro stopped");
     });
   }
 });
@@ -1144,11 +1433,12 @@ fbPlayBtn?.addEventListener("click", async () => {
 // Single Step Button
 fbNextBtn?.addEventListener("click", () => {
   if (!currentTabId) return;
-  chrome.runtime.sendMessage({ type: "NATIVE_TRIGGER_ARROW_RIGHT", tabId: currentTabId }, (res) => {
+  const activeKey = currentMacroBlocks[0]?.key || "ArrowRight";
+  chrome.runtime.sendMessage({ type: "STEP_MACRO_SINGLE", tabId: currentTabId, key: activeKey }, (res) => {
     if (res?.status === "ok") {
-      if (fbSlideIndicator) fbSlideIndicator.textContent = "➡️ Dispatched [→]";
+      if (fbSlideIndicator) fbSlideIndicator.textContent = `➡️ Dispatched [${activeKey}]`;
       setTimeout(() => {
-        if (!isFbPlaying && fbSlideIndicator) fbSlideIndicator.textContent = "isTrusted: true";
+        if (!isMacroPlaying && fbSlideIndicator) fbSlideIndicator.textContent = "isTrusted: true";
       }, 1000);
     }
   });
@@ -1156,15 +1446,20 @@ fbNextBtn?.addEventListener("click", () => {
 
 // Speed Dropdown Change
 fbSpeedSelect?.addEventListener("change", () => {
-  if (isFbPlaying && currentTabId) {
-    const speed = parseInt(fbSpeedSelect.value, 10) || 2200;
-    chrome.runtime.sendMessage({
-      type: "NATIVE_START_AUTO_SLIDE",
-      tabId: currentTabId,
-      intervalMs: speed
-    });
-    showToast(`⏱️ Speed set to ${(speed / 1000).toFixed(1)}s`);
+  const speed = parseInt(fbSpeedSelect.value, 10) || 2200;
+  if (currentMacroBlocks.length === 1) {
+    currentMacroBlocks[0].delayMs = speed;
+    saveTabMacroState();
   }
+  if (isMacroPlaying && currentTabId) {
+    chrome.runtime.sendMessage({
+      type: "START_MACRO_SEQUENCE",
+      tabId: currentTabId,
+      blocks: currentMacroBlocks,
+      loopMode: isMacroLoop
+    });
+  }
+  showToast(`⏱️ Step delay set to ${(speed / 1000).toFixed(1)}s`);
 });
 
 // Real-Time Background & Content Script Message Listener
@@ -1181,12 +1476,14 @@ chrome.runtime.onMessage.addListener((msg) => {
       setTimeout(hideBatchProgressBar, 2500);
     }
   }
-  if (msg.type === "NATIVE_SLIDE_TICK" && msg.tabId === currentTabId) {
-    if (fbSlideIndicator) fbSlideIndicator.textContent = "● Auto-pressing [→]...";
+  if (msg.type === "MACRO_STEP_TICK" && msg.tabId === currentTabId) {
+    if (fbSlideIndicator) {
+      fbSlideIndicator.textContent = `● Step ${msg.stepIndex + 1}/${msg.totalSteps} [${msg.key}]`;
+    }
   }
-  if (msg.type === "NATIVE_SLIDE_STOPPED" && msg.tabId === currentTabId) {
+  if ((msg.type === "MACRO_SEQUENCE_STOPPED" || msg.type === "MACRO_SEQUENCE_COMPLETED") && msg.tabId === currentTabId) {
     setFbPlayState(false);
-    showToast("⏹️ Auto-slide stopped");
+    showToast(msg.type === "MACRO_SEQUENCE_COMPLETED" ? "🏁 Macro sequence completed!" : "⏹️ Macro stopped");
   }
 });
 
@@ -1197,6 +1494,7 @@ chrome.tabs.onActivated.addListener(async (activeInfo) => {
   currentTabId = activeInfo.tabId;
   await getActiveTabInfo();
   await loadUserSettings(activeInfo.tabId);
+  await loadTabMacroState(activeInfo.tabId);
   await loadItems();
   await checkAutoSlideTabStatus();
 });
@@ -1204,7 +1502,9 @@ chrome.tabs.onActivated.addListener(async (activeInfo) => {
 // Initialize on Panel Launch
 getActiveTabInfo().then(() => {
   loadUserSettings().then(() => {
-    loadItems().then(checkAutoSlideTabStatus);
+    loadTabMacroState(currentTabId).then(() => {
+      loadItems().then(checkAutoSlideTabStatus);
+    });
   });
 });
 
