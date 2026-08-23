@@ -123,17 +123,23 @@ chrome.webRequest.onCompleted.addListener(
     }
 
     const isImage = details.type === "image" || (contentType && contentType.startsWith("image/"));
-    const isMedia = details.type === "media" || (contentType && contentType.startsWith("video/"));
+    const isHlsStream = details.url.toLowerCase().includes(".m3u8") || (contentType && (contentType.includes("application/x-mpegurl") || contentType.includes("application/vnd.apple.mpegurl")));
+    const isDirectVideo = details.type === "media" || (contentType && contentType.startsWith("video/"));
 
-    if (!isImage && !isMedia) return;
+    if (!isImage && !isHlsStream && !isDirectVideo) return;
 
     // กรอง Tracking Pixels หรือ Spacer GIFs ขนาดจิ๋ว (< 30 bytes)
     if (isImage && contentLength !== null && contentLength > 0 && contentLength < 30) return;
 
-    // กรองเฉพาะ Standalone MP4/WebM Videos เท่านั้น ปฏิเสธ Chunks สตรีมมิ่ง
-    if (isMedia && !isStandaloneMp4Video(details.url, contentType, contentLength)) return;
+    // กรองเฉพาะ Standalone MP4/WebM Videos เท่านั้น ปฏิเสธ Chunks สตรีมมิ่งย่อย
+    if (isDirectVideo && !isHlsStream && !isStandaloneMp4Video(details.url, contentType, contentLength)) return;
 
     const normalizedUrl = normalizeImageUrl(details.url);
+
+    // กำหนด Resource Type ที่ชัดเจน
+    let resourceType = "image";
+    if (isHlsStream) resourceType = "hls_stream";
+    else if (isDirectVideo) resourceType = "media";
 
     // สร้าง Fingerprint จาก ETag หรือ Path + Size
     let cleanPath = "";
@@ -146,8 +152,8 @@ chrome.webRequest.onCompleted.addListener(
       normalizedUrl,
       etag,
       fingerprint,
-      resourceType: isMedia ? "media" : "image",
-      contentType: contentType || (isMedia ? "video/mp4" : "image/jpeg"),
+      resourceType: resourceType,
+      contentType: contentType || (isHlsStream ? "application/x-mpegURL" : (isDirectVideo ? "video/mp4" : "image/jpeg")),
       size: contentLength,
       statusCode: details.statusCode,
       timestamp: Date.now()
@@ -167,7 +173,7 @@ async function addCapturedItem(tabId, item) {
   const tabSettings = tabSettingsStore?.[tabSettingsKey] || {};
 
   if (item.resourceType === "image" && tabSettings.captureImages === false) return;
-  if (item.resourceType === "media" && tabSettings.captureVideos === false) return;
+  if ((item.resourceType === "media" || item.resourceType === "hls_stream") && tabSettings.captureVideos === false) return;
 
   const key = "captured-" + tabId;
   const store = await chrome.storage.session.get(key);

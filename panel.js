@@ -217,7 +217,8 @@ function generateFilename(item, index = 1, total = 1, customPattern = null, cust
 
 // Format short badge text for media type
 function formatBadgeText(item) {
-  if (item.resourceType === "media") return "VIDEO";
+  if (item.resourceType === "hls_stream") return "HLS ⚡";
+  if (item.resourceType === "media") return "MP4";
   const mime = (item.contentType || "").toLowerCase();
   if (mime.includes("webp")) return "WEBP";
   if (mime.includes("png")) return "PNG";
@@ -237,7 +238,8 @@ function getFiltered() {
   const minSize = parseInt(filterSizeEl?.value || "0", 10) || 0;
 
   return items.filter((item) => {
-    if (filterType !== "all" && item.resourceType !== filterType) return false;
+    if (filterType === "image" && item.resourceType !== "image") return false;
+    if (filterType === "media" && item.resourceType !== "media" && item.resourceType !== "hls_stream") return false;
     if (minSize > 0 && (!item.size || item.size < minSize)) return false;
     if (searchTerm && !item.url.toLowerCase().includes(searchTerm)) return false;
     return true;
@@ -301,7 +303,22 @@ function render() {
     dimBadge.className = "dim-badge";
     dimBadge.textContent = item.width && item.height ? `${item.width}×${item.height}` : "...";
 
-    if (item.resourceType === "media") {
+    if (item.resourceType === "hls_stream") {
+      const streamCard = document.createElement("div");
+      streamCard.className = "thumb-img";
+      streamCard.style.display = "flex";
+      streamCard.style.flexDirection = "column";
+      streamCard.style.alignItems = "center";
+      streamCard.style.justifyContent = "center";
+      streamCard.style.background = "linear-gradient(135deg, #064e3b, #0f172a)";
+      streamCard.style.color = "#34d399";
+      streamCard.style.fontSize = "11px";
+      streamCard.style.fontWeight = "700";
+      streamCard.style.gap = "4px";
+      streamCard.innerHTML = `<span style="font-size:24px;">🎬</span><span>HLS STREAM</span>`;
+      dimBadge.textContent = "HLS Stream";
+      thumbContainer.appendChild(streamCard);
+    } else if (item.resourceType === "media") {
       const videoEl = document.createElement("video");
       videoEl.className = "thumb-img";
       videoEl.src = item.url;
@@ -416,8 +433,74 @@ function updateSelectAllCheckbox(filteredList) {
   selectAllCb.indeterminate = selectedCount > 0 && selectedCount < len;
 }
 
+// HLS Streaming Downloader Controller
+let activeHlsAbortController = null;
+
+async function triggerHlsStitchDownload(item, index = 1, customFilename = null) {
+  const hlsBanner = document.getElementById("hls-progress-banner");
+  const hlsCurrent = document.getElementById("hls-progress-current");
+  const hlsTotal = document.getElementById("hls-progress-total");
+  const hlsPercent = document.getElementById("hls-progress-percent");
+
+  const filename = customFilename || generateFilename(item, index, filteredItemsCache.length);
+  const folder = userSettings.subfolder || "captured";
+
+  if (activeHlsAbortController) {
+    activeHlsAbortController.abort();
+  }
+  activeHlsAbortController = new AbortController();
+
+  if (hlsBanner) hlsBanner.style.display = "flex";
+  if (hlsCurrent) hlsCurrent.textContent = "0";
+  if (hlsTotal) hlsTotal.textContent = "...";
+  if (hlsPercent) hlsPercent.textContent = "0%";
+
+  showToast(`⚡ Parsing HLS stream for ${filename}...`);
+
+  try {
+    const result = await stitchAndDownloadHlsVideo({
+      manifestUrl: item.url,
+      targetFilename: filename,
+      folder: folder,
+      concurrency: 6,
+      abortSignal: activeHlsAbortController.signal,
+      onProgress: (prog) => {
+        if (hlsCurrent) hlsCurrent.textContent = prog.completed;
+        if (hlsTotal) hlsTotal.textContent = prog.total;
+        if (hlsPercent) hlsPercent.textContent = `${prog.percent}%`;
+      }
+    });
+
+    if (hlsBanner) hlsBanner.style.display = "none";
+    showToast(`✅ Downloaded HLS Video (${(result.totalBytes / (1024 * 1024)).toFixed(1)} MB): ${result.fullPath}`);
+  } catch (err) {
+    if (hlsBanner) hlsBanner.style.display = "none";
+    if (err.message && err.message.includes("aborted")) {
+      showToast("⏹️ HLS Video stitching cancelled");
+    } else {
+      showToast(`❌ HLS Stitch failed: ${err.message}`);
+    }
+  }
+}
+
+// Cancel HLS stitching button
+document.getElementById("cancel-hls-btn")?.addEventListener("click", () => {
+  if (activeHlsAbortController) {
+    activeHlsAbortController.abort();
+    activeHlsAbortController = null;
+  }
+  const hlsBanner = document.getElementById("hls-progress-banner");
+  if (hlsBanner) hlsBanner.style.display = "none";
+  showToast("⏹️ Cancelled HLS stitching");
+});
+
 // Single Item Download Trigger
 function downloadSingleItem(item, index = 1, customFilename = null) {
+  if (item.resourceType === "hls_stream") {
+    triggerHlsStitchDownload(item, index, customFilename);
+    return;
+  }
+
   const filename = customFilename || generateFilename(item, index, filteredItemsCache.length);
   const folder = userSettings.subfolder || "captured";
 
@@ -482,7 +565,25 @@ function updateLightboxContent() {
   const wrapper = document.querySelector(".lightbox-img-wrapper");
   if (wrapper) {
     wrapper.innerHTML = "";
-    if (item.resourceType === "media") {
+    if (item.resourceType === "hls_stream") {
+      const hlsCard = document.createElement("div");
+      hlsCard.style.display = "flex";
+      hlsCard.style.flexDirection = "column";
+      hlsCard.style.alignItems = "center";
+      hlsCard.style.justifyContent = "center";
+      hlsCard.style.padding = "30px 20px";
+      hlsCard.style.background = "linear-gradient(135deg, rgba(6, 78, 59, 0.6), rgba(15, 23, 42, 0.9))";
+      hlsCard.style.border = "1px solid #059669";
+      hlsCard.style.borderRadius = "8px";
+      hlsCard.style.gap = "10px";
+      hlsCard.innerHTML = `
+        <span style="font-size: 48px;">🎬</span>
+        <span style="font-size: 14px; font-weight: 700; color: #34d399;">HLS Streaming Playlist (.m3u8)</span>
+        <span style="font-size: 11px; color: #a1a1aa; max-width: 320px; text-align: center;">Click <b>"⚡ Stitch & Download"</b> below to concurrently fetch and merge all segment chunks into a complete .mp4 file.</span>
+      `;
+      wrapper.appendChild(hlsCard);
+      if (lightboxDim) lightboxDim.textContent = "HLS Stream";
+    } else if (item.resourceType === "media") {
       const vid = document.createElement("video");
       vid.id = "lightbox-video";
       vid.src = item.url;
@@ -516,16 +617,28 @@ function updateLightboxContent() {
     }
   }
 
+  const dlBtn = document.getElementById("lightbox-dl-btn");
+  if (dlBtn) {
+    if (item.resourceType === "hls_stream") {
+      dlBtn.textContent = "⚡ Stitch & Download HLS Video";
+    } else if (item.resourceType === "media") {
+      dlBtn.textContent = "💾 Download Video";
+    } else {
+      dlBtn.textContent = "💾 Download Image";
+    }
+  }
+
   if (lightboxSize) lightboxSize.textContent = humanSize(item.size);
   if (lightboxMime) lightboxMime.textContent = item.contentType || "image/jpeg";
   if (lightboxIndexBadge) lightboxIndexBadge.textContent = `${currentLightboxIndex + 1} / ${filteredItemsCache.length}`;
 
-  if (lightboxDim) {
+  if (lightboxDim && item.resourceType !== "hls_stream") {
     lightboxDim.textContent = (item.width && item.height)
       ? `${item.width} × ${item.height}`
       : "Reading dimensions...";
   }
 }
+
 
 function updateLightboxPathPreview(filename) {
   if (!lightboxPathPreview) return;

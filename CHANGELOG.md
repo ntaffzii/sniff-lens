@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
+## [3.0.0] - 2026-08-23
+### Added
+- **HLS Streaming Video Stitcher Engine (Phase 1 Complete)**:
+  - Intercepts `.m3u8` master and media playlists directly from network traffic.
+  - **Single-Pass $O(N)$ M3U8 Lexical Scanner**: Selects highest bitrate stream and parses ordered chunk segment URLs.
+  - **$O(N/K)$ Concurrency Worker Pool (6 Streams)**: Downloads video chunks in parallel with $O(1)$ pre-allocated slot ingestion.
+  - **Zero-Copy Binary Blob Muxer**: Assembles chunks in-memory into a unified `.mp4` video container with instant $O(1)$ RAM dereferencing.
+  - **Live Stitching Progress Banner**: Real-time progress percentage (`34/110 Chunks - 31%`) with instant cancellation support.
+  - **Interactive Stream Inspection in Lightbox**: View streaming metadata and trigger 1-click video stitching and downloading.
+
+---
+
 ## [2.7.0] - 2026-08-23
 ### Added
 - **Selective Media Capture Toggles (Images / Standalone MP4)**:

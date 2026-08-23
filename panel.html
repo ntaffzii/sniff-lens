@@ -971,12 +971,23 @@
     <button id="cancel-batch-btn" style="background: #ef4444; color: #fff; border: none; border-radius: 4px; padding: 3px 7px; font-size: 10px; cursor: pointer;">⏹️ Cancel</button>
   </div>
 
+  <!-- Active HLS Stitching Progress Banner -->
+  <div id="hls-progress-banner" style="display: none; position: sticky; bottom: 0; left: 0; right: 0; background: #064e3b; border-top: 1px solid #059669; padding: 8px 12px; z-index: 61; font-size: 11px; color: #a7f3d0; justify-content: space-between; align-items: center;">
+    <div style="display: flex; align-items: center; gap: 6px;">
+      <span style="animation: spin 1s linear infinite; display: inline-block;">⚡</span>
+      <span>Stitching Chunks (<span id="hls-progress-current">0</span>/<span id="hls-progress-total">0</span>): <b id="hls-progress-percent" style="color: #fff;">0%</b></span>
+    </div>
+    <button id="cancel-hls-btn" style="background: #ef4444; color: #fff; border: none; border-radius: 4px; padding: 3px 7px; font-size: 10px; cursor: pointer;">⏹️ Cancel</button>
+  </div>
+
   <!-- Toast Element -->
   <div id="toast">📋 Copied to clipboard</div>
 
+  <script src="hls_stitcher.js"></script>
   <script src="panel.js"></script>
 </body>
 </html>
+
 
 
 

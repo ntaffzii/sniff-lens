@@ -10,18 +10,19 @@ This document outlines the strategic roadmap, architectural specifications, and 
 ┌──────────────────────────────────────────────────────────────────────────────────┐
 │                             SniffLens Release Pipeline                           │
 ├───────────────────────┬──────────────────────────┬───────────────────────────────┤
-│ ✅ Current (v2.7.0)   │ ⏳ Phase 1 (v3.0.0)      │ 🔮 Phase 2 & 3 (v3.2 - v3.5)   │
+│ ✅ Completed (v3.0.0) │ ⏳ Phase 2 (v3.2.0)      │ 🔮 Phase 3 (v3.5.0)           │
 │ Production Ready      │ In Planning              │ Backlog & Architecture        │
-│ • Network Sniffer     │ • HLS .m3u8 Interceptor  │ • On-Device AI BG Removal     │
-│ • Native Hardware Key │ • TS/M4S Chunk Stitcher  │ • Local OCR & Dataset Parser  │
-│ • Multi-Tab Isolation │ • Web Worker Concurrency │ • Chrome Web Store CI/CD      │
-│ • Smart MP4 Filter    │ • In-Browser Blob Muxer  │ • S3 / Drive / Python Webhook │
+│ • Network Sniffer     │ • On-Device AI BG Removal│ • Chrome Web Store CI/CD      │
+│ • Native Hardware Key │ • Local OCR Text Parser  │ • Direct Drive / S3 Webhook   │
+│ • Multi-Tab Isolation │ • Smart Image Upscaler   │ • Custom Global Hotkeys       │
+│ • HLS Video Stitcher  │ • Vision Dataset Parser  │ • Auto-Package Release        │
 └───────────────────────┴──────────────────────────┴───────────────────────────────┘
 ```
 
 ---
 
-## 🎯 Phase 1 (v3.0.0): HLS & DASH Streaming Video Stitcher Engine
+## 🎯 Phase 1 (v3.0.0): HLS & DASH Streaming Video Stitcher Engine `[✅ COMPLETED]`
+
 
 ### 1. Problem Statement
 Modern platforms (Facebook, Shopee, TikTok, Instagram, Twitter) split high-definition videos into 1-to-2-second chunk segments (`.ts` or `.m4s`) governed by master playlist files (`.m3u8` or `.mpd`). Direct network sniffing only captures single isolated chunks instead of the full video.
