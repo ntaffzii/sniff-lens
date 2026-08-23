@@ -291,6 +291,55 @@ async function addCapturedItem(tabId, item) {
 }
 
 // ============================================================================
+// Helper: ดาวน์โหลดไฟล์ผ่าน In-Memory Blob เพื่อส่ง Referer และป้องกัน 403 / .htm Errors
+// ============================================================================
+async function downloadMediaViaBlob(url, fullPath, saveAs = false) {
+  try {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const blob = await res.blob();
+    const blobUrl = URL.createObjectURL(blob);
+
+    return new Promise((resolve, reject) => {
+      chrome.downloads.download(
+        {
+          url: blobUrl,
+          filename: fullPath,
+          saveAs: Boolean(saveAs)
+        },
+        (downloadId) => {
+          if (chrome.runtime.lastError || !downloadId) {
+            URL.revokeObjectURL(blobUrl);
+            reject(new Error(chrome.runtime.lastError?.message || "Failed to download"));
+          } else {
+            setTimeout(() => URL.revokeObjectURL(blobUrl), 25000);
+            resolve(downloadId);
+          }
+        }
+      );
+    });
+  } catch (err) {
+    console.warn("[Download Engine] Blob fetch failed, falling back to direct URL:", err.message);
+    return new Promise((resolve, reject) => {
+      chrome.downloads.download(
+        {
+          url: url,
+          filename: fullPath,
+          saveAs: Boolean(saveAs)
+        },
+        (downloadId) => {
+          if (chrome.runtime.lastError || !downloadId) {
+            reject(new Error(chrome.runtime.lastError?.message || "Failed to download"));
+          } else {
+            resolve(downloadId);
+          }
+        }
+      );
+    });
+  }
+}
+
+// ============================================================================
 // จัดการ Message จาก Popup และ Side Panel (รองรับ Custom Folder & Sequential Naming)
 // ============================================================================
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
@@ -300,12 +349,9 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     const filename = sanitizeFilename(msg.filename || getFilenameFromUrl(msg.url, msg.contentType));
     const fullPath = subfolder ? `${subfolder}/${filename}` : filename;
 
-    chrome.downloads.download({
-      url: msg.url,
-      filename: fullPath,
-      saveAs: Boolean(msg.saveAs)
-    });
-    sendResponse({ status: "ok", path: fullPath });
+    downloadMediaViaBlob(msg.url, fullPath, msg.saveAs)
+      .then((id) => sendResponse({ status: "ok", path: fullPath, downloadId: id }))
+      .catch((err) => sendResponse({ status: "error", message: err.message }));
     return true;
   }
 
@@ -329,17 +375,17 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     activeBatchDownloads[batchId] = { isCancelled: false, timers: [] };
 
     uniqueItems.forEach((item, index) => {
-      const timer = setTimeout(() => {
+      const timer = setTimeout(async () => {
         if (activeBatchDownloads[batchId]?.isCancelled) return;
 
         const filename = sanitizeFilename(item.targetFilename || getFilenameFromUrl(item.url, item.contentType));
         const fullPath = subfolder ? `${subfolder}/${filename}` : filename;
 
-        chrome.downloads.download({
-          url: item.url,
-          filename: fullPath,
-          saveAs: saveAs
-        });
+        try {
+          await downloadMediaViaBlob(item.url, fullPath, saveAs);
+        } catch (e) {
+          console.warn("[Batch Download] Error:", e.message);
+        }
 
         // ส่งความคืบหน้ากลับไปยัง UI
         chrome.runtime.sendMessage({
@@ -349,7 +395,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           total: uniqueItems.length,
           filename
         }).catch(() => {});
-      }, index * 200);
+      }, index * 250);
 
       activeBatchDownloads[batchId].timers.push(timer);
     });
