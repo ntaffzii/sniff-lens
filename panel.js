@@ -516,8 +516,8 @@ document.getElementById("cancel-hls-btn")?.addEventListener("click", () => {
   showToast("⏹️ Cancelled HLS stitching");
 });
 
-// Single Item Download Trigger
-function downloadSingleItem(item, index = 1, customFilename = null) {
+// Single Item Download Trigger (Direct In-Memory Blob Pipeline)
+async function downloadSingleItem(item, index = 1, customFilename = null) {
   if (item.resourceType === "hls_stream") {
     triggerHlsStitchDownload(item, index, customFilename);
     return;
@@ -525,7 +525,47 @@ function downloadSingleItem(item, index = 1, customFilename = null) {
 
   const filename = customFilename || generateFilename(item, index, filteredItemsCache.length);
   const folder = userSettings.subfolder || "captured";
+  const subfolder = folder ? folder.replace(/[\\/]+$/, "") + "/" : "";
+  const fullPath = subfolder + filename;
 
+  showToast(`💾 Downloading: ${filename}...`);
+
+  // Step 1: Direct In-Memory Blob Fetch in Panel context (Bypasses TikTok/Facebook Hotlink 403)
+  try {
+    const res = await fetch(item.url);
+    if (res.ok) {
+      const blob = await res.blob();
+      const finalBlob = (filename.endsWith(".mp4") && blob.type.includes("html"))
+        ? new Blob([blob], { type: "video/mp4" })
+        : blob;
+      const blobUrl = URL.createObjectURL(finalBlob);
+
+      chrome.downloads.download(
+        {
+          url: blobUrl,
+          filename: fullPath,
+          saveAs: Boolean(userSettings.saveAsPrompt)
+        },
+        (downloadId) => {
+          if (chrome.runtime.lastError || !downloadId) {
+            // Anchor click fallback for immediate local disk write
+            const a = document.createElement("a");
+            a.href = blobUrl;
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+          }
+          setTimeout(() => URL.revokeObjectURL(blobUrl), 30000);
+        }
+      );
+      return;
+    }
+  } catch (err) {
+    console.warn("[Panel Direct Download] Blob fetch failed, delegating to background:", err.message);
+  }
+
+  // Step 2: Fallback to Background Service Worker
   chrome.runtime.sendMessage({
     type: "DOWNLOAD_IMAGE",
     url: item.url,
@@ -534,9 +574,8 @@ function downloadSingleItem(item, index = 1, customFilename = null) {
     filename: filename,
     saveAs: userSettings.saveAsPrompt
   });
-
-  showToast(`💾 Downloading: ${filename}`);
 }
+
 
 // ============================================================================
 // Lightbox Modal (Fullscreen Preview & Single Rename)
