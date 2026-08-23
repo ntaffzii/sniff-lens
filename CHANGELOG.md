@@ -6,6 +6,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
+## [2.7.0] - 2026-08-23
+### Added
+- **Selective Media Capture Toggles (Images / Standalone MP4)**:
+  - Settings switches to selectively enable/disable image or video network sniffing per tab.
+- **Smart Standalone MP4 Video Filter Engine**:
+  - Automatically detects and captures genuine unencrypted standalone `.mp4` / `.webm` media (> 50 KB).
+  - Automatically filters out streaming chunk segments (`.m4s`, `.ts`, `.m3u8`, `.mpd`, Init chunks) to prevent black cards and preview errors.
+  - Added filter for micro tracking pixels / spacer GIFs (< 30 bytes).
+- **Interactive Video Preview & Lightbox Player**:
+  - Seamlessly renders playable `<video>` controls in Fullscreen Lightbox Modal and thumbnail grids.
+
+---
+
 ## [2.6.3] - 2026-08-23
 ### Added
 - **Official Squircle App Icon Branding**: Modern rounded square app icon (`16x16` to `512x512` px) with dual neon emerald/cyan border and transparent exterior corners.

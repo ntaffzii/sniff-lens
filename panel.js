@@ -16,6 +16,8 @@ const DEFAULT_GLOBAL_SETTINGS = {
   filenamePattern: "{prefix}_{num3}",
   prefix: "image",
   startNumber: 1,
+  captureImages: true,
+  captureVideos: true,
   dedupEnabled: true,
   saveAsPrompt: false
 };
@@ -607,6 +609,8 @@ const folderInput = document.getElementById("setting-folder-input");
 const patternInput = document.getElementById("setting-pattern-input");
 const prefixInput = document.getElementById("setting-prefix-input");
 const startNumInput = document.getElementById("setting-start-num-input");
+const capImagesCb = document.getElementById("setting-cap-images-cb");
+const capVideosCb = document.getElementById("setting-cap-videos-cb");
 const dedupCb = document.getElementById("setting-dedup-cb");
 const saveAsCb = document.getElementById("setting-saveas-cb");
 const saveGlobalCb = document.getElementById("setting-save-global-cb");
@@ -618,6 +622,8 @@ function openSettingsModal() {
   if (patternInput) patternInput.value = userSettings.filenamePattern || "{prefix}_{num3}";
   if (prefixInput) prefixInput.value = userSettings.prefix || "image";
   if (startNumInput) startNumInput.value = userSettings.startNumber || 1;
+  if (capImagesCb) capImagesCb.checked = userSettings.captureImages !== false;
+  if (capVideosCb) capVideosCb.checked = userSettings.captureVideos !== false;
   if (dedupCb) dedupCb.checked = userSettings.dedupEnabled !== false;
   if (saveAsCb) saveAsCb.checked = Boolean(userSettings.saveAsPrompt);
   if (saveGlobalCb) saveGlobalCb.checked = false;
@@ -690,6 +696,8 @@ document.getElementById("settings-save-btn")?.addEventListener("click", async ()
   userSettings.filenamePattern = patternInput?.value.trim() || "{prefix}_{num3}";
   userSettings.prefix = prefixInput?.value.trim() || "image";
   userSettings.startNumber = Math.max(1, parseInt(startNumInput?.value || "1", 10) || 1);
+  userSettings.captureImages = capImagesCb ? capImagesCb.checked : true;
+  userSettings.captureVideos = capVideosCb ? capVideosCb.checked : true;
   userSettings.dedupEnabled = dedupCb ? dedupCb.checked : true;
   userSettings.saveAsPrompt = saveAsCb ? saveAsCb.checked : false;
 
@@ -699,6 +707,7 @@ document.getElementById("settings-save-btn")?.addEventListener("click", async ()
   render();
   showToast(saveGlobal ? "💾 Saved for this tab & set as global default" : "💾 Settings saved for this tab");
 });
+
 
 document.getElementById("settings-cancel-btn")?.addEventListener("click", closeSettingsModal);
 document.getElementById("settings-close-btn")?.addEventListener("click", closeSettingsModal);

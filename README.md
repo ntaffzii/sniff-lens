@@ -15,7 +15,7 @@
 <p align="center">
   <img src="https://img.shields.io/badge/Manifest-V3-emerald?style=flat-square&logo=googlechrome&logoColor=white" alt="Manifest V3" />
   <img src="https://img.shields.io/badge/Chrome_%26_Brave-Supported-blue?style=flat-square&logo=brave&logoColor=white" alt="Browser" />
-  <img src="https://img.shields.io/badge/Version-2.6.3-indigo?style=flat-square" alt="Version" />
+  <img src="https://img.shields.io/badge/Version-2.7.0-indigo?style=flat-square" alt="Version" />
   <img src="https://img.shields.io/badge/Performance-Optimized_(Big--O)-success?style=flat-square" alt="Big-O" />
   <img src="https://img.shields.io/badge/License-MIT-green?style=flat-square" alt="License" />
   <img src="https://img.shields.io/badge/PRs-Welcome-brightgreen?style=flat-square" alt="PRs Welcome" />
@@ -27,13 +27,15 @@
 
 | Feature | Description |
 | :--- | :--- |
-| **⚡ Network Layer Sniffing** | Intercepts full-resolution image streams (JPEG, PNG, WEBP, SVG, GIF) and videos (MP4, WebM) directly from network traffic. Never misses high-res assets hidden behind overlays. |
+| **⚡ Network Layer Sniffing** | Intercepts full-resolution image streams (JPEG, PNG, WEBP, SVG, GIF) directly from network traffic. Never misses high-res assets hidden behind overlays. |
+| **🎥 Smart Standalone MP4 Filter** | Intelligently captures unencrypted standalone `.mp4` / `.webm` video assets while automatically filtering out broken streaming chunks (`.m4s`, `.ts`, `.m3u8`, `.mpd`). |
+| **🎯 Selective Media Toggles** | Configurable toggles in Settings to selectively enable or disable image or video sniffing independently per tab. |
 | **⚡ Native Hardware Key Auto-Slide** | Dispatches authentic hardware `[→]` (`ArrowRight`) keyboard events via **Chrome Debugger Protocol** (`isTrusted = true`), seamlessly bypassing React 18 / Meta Photo Theater security filters. |
 | **📌 Multi-Tab & Per-Site Isolation** | Independent configuration profiles (folder, prefix, starting sequence number) per browser tab. Instant sync upon tab switching with zero state collision. |
 | **🛡️ 4-Tier Smart Deduplication** | Quadruple-check duplicate prevention (URL Query Normalization, ETag Header Matching, Content Fingerprinting, Pre-download Guard) to eliminate duplicate saves. |
 | **🔢 Sequential Naming & Start Offset** | Fully customizable naming templates (`{prefix}_{num3}`) with configurable **Starting Sequence Numbers** (e.g. start at `51`, `101`, `250`). |
 | **📁 Custom Subdirectory Routing** | Route downloads to dedicated subdirectories inside `Downloads/` with 1-click domain and date presets. |
-| **🖼️ Fullscreen Lightbox Modal** | Inspect high-res assets with live dimensions (`1920×1080`), file size, MIME type badges, single inline renamer, and keyboard navigation. |
+| **🖼️ Fullscreen Lightbox Modal** | Inspect high-res assets and playable videos with live dimensions (`1920×1080`), file size, MIME type badges, single inline renamer, and keyboard navigation. |
 | **💾 Batch Download & Safety Guard** | Interactive confirmation modal showing file count, target directory, and filename range, paired with a real-time progress banner and instant queue cancellation. |
 | **🤖 Vision AI Toolkit** | Ready-to-use integration scripts in [`AI_INTEGRATION.md`](./AI_INTEGRATION.md) for **Google Gemini Vision**, **OpenAI GPT-4o**, and **Ollama / LLaVA**. |
 

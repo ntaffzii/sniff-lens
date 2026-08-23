@@ -15,7 +15,7 @@
 <p align="center">
   <img src="https://img.shields.io/badge/Manifest-V3-emerald?style=flat-square&logo=googlechrome&logoColor=white" alt="Manifest V3" />
   <img src="https://img.shields.io/badge/Chrome_%26_Brave-Supported-blue?style=flat-square&logo=brave&logoColor=white" alt="Browser" />
-  <img src="https://img.shields.io/badge/Version-2.6.3-indigo?style=flat-square" alt="Version" />
+  <img src="https://img.shields.io/badge/Version-2.7.0-indigo?style=flat-square" alt="Version" />
   <img src="https://img.shields.io/badge/License-MIT-green?style=flat-square" alt="License" />
   <img src="https://img.shields.io/badge/PRs-Welcome-brightgreen?style=flat-square" alt="PRs Welcome" />
 </p>
@@ -26,13 +26,15 @@
 
 | ฟีเจอร์ | คำอธิบาย |
 | :--- | :--- |
-| **⚡ Network Layer Sniffing** | ดักจับไฟล์รูปภาพ (JPEG, PNG, WEBP, SVG, GIF) และวิดีโอ (MP4, WebM) ระดับ Traffic จริงที่เบราว์เซอร์ดาวน์โหลด ไม่พลาดรูปความละเอียดสูง |
+| **⚡ Network Layer Sniffing** | ดักจับไฟล์รูปภาพ (JPEG, PNG, WEBP, SVG, GIF) ระดับ Traffic จริงที่เบราว์เซอร์ดาวน์โหลด ไม่พลาดรูปความละเอียดสูง |
+| **🎥 Smart Standalone MP4 Filter** | ดักจับเฉพาะไฟล์วิดีโอ `.mp4` / `.webm` แท้ที่ไม่เข้ารหัส พร้อมกรองเศษไฟล์สตรีมมิ่ง (.m4s, .ts, .m3u8, .mpd) ทิ้งอัตโนมัติ 100% |
+| **🎯 Selective Media Toggles** | สวิตช์เปิด/ปิด ในหน้าตั้งค่า สามารถเลือกดักจับเฉพาะรูปภาพ หรือเฉพาะวิดีโอ แยกตามแต่ละแท็บได้อย่างอิสระ |
 | **⚡ Native Hardware Key Auto-Slide** | จำลองการกดปุ่มลูกศรขวา (`ArrowRight`) ผ่าน **Chrome Debugger Protocol** ได้อีเวนต์ `isTrusted = true` แท้ 100% เลื่อนดูรูปบน Facebook Photo Theater และเว็บต่างๆ ได้อัตโนมัติ |
 | **📌 Multi-Tab & Per-Site Isolation** | แยก Profile การตั้งค่าโฟลเดอร์ คำนำหน้า และเลขลำดับตามแต่ละแท็บ/โพสต์อิสระ 100% สลับแท็บแล้วโหลดค่าของแท็บนั้นทันที ไม่ทับซ้อนกัน |
 | **🛡️ 4-Tier Smart Deduplication** | ป้องกันรูปซ้ำ 4 ระดับ (URL Normalization, ETag Matching, Content Fingerprinting, Pre-download Guard) เลื่อนฟีดแค่ไหนก็ไม่นับรูปเดิม |
 | **🔢 Sequential Naming & Start Number** | กำหนดรูปแบบชื่อไฟล์ผ่าน Template (`{prefix}_{num3}`) พร้อมเลือก **เลขเริ่มต้น (Start Number)** เช่น เริ่มต้นที่ `51`, `101` เพื่อโหลดต่อเนื่อง |
 | **📁 Custom Subdirectory Routing** | กำหนดโฟลเดอร์ย่อยใน `Downloads/` ได้อิสระ พร้อมปุ่ม Preset ตามชื่อเว็บและวันที่ |
-| **🖼️ Fullscreen Lightbox Modal** | ดูรูปขนาดเต็มพร้อมแสดง Dimension (`1920×1080`), ขนาดไฟล์, MIME type, เปลี่ยนชื่อไฟล์เดี่ยวก่อนโหลด และคัดลอก URL ทันใจ |
+| **🖼️ Fullscreen Lightbox Modal** | ดูรูปขนาดเต็มหรือเล่นวิดีโอ พร้อมแสดง Dimension (`1920×1080`), ขนาดไฟล์, MIME type, เปลี่ยนชื่อไฟล์เดี่ยวก่อนโหลด และคัดลอก URL ทันใจ |
 | **💾 Batch Download & Safety Guard** | หน้าต่างเตือนยืนยันก่อนโหลดแบบกลุ่ม แสดงช่วงชื่อไฟล์ พร้อม Progress Bar แบบเรียลไทม์ และปุ่มกดยกเลิกคิวได้ทันที |
 | **🤖 Vision AI Toolkit** | คู่มือและโค้ดพร้อมใช้ใน [`AI_INTEGRATION.md`](./AI_INTEGRATION.md) สำหรับเชื่อมต่อไปยัง **Google Gemini Vision**, **OpenAI GPT-4o** และ **Ollama** |
 

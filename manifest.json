@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Network Image Sniffer & AI Toolkit",
-  "version": "2.6.3",
+  "version": "2.7.0",
   "description": "High-performance Network Layer media sniffer with Native Hardware Auto-Slide, Lightbox Preview, Multi-Tab Settings Isolation, and sequential batch downloader.",
   "icons": {
     "16": "icons/icon-16.png",

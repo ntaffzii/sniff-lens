@@ -67,6 +67,36 @@ function normalizeImageUrl(rawUrl) {
 }
 
 // ============================================================================
+// ============================================================================
+// Helper: ตรวจสอบวิดีโอ MP4 / WebM แท้ที่ไม่ได้เข้ารหัส และปฏิเสธ Streaming Chunks
+// ============================================================================
+function isStandaloneMp4Video(rawUrl, contentType, contentLength) {
+  const urlLower = rawUrl.toLowerCase();
+  const mimeLower = (contentType || "").toLowerCase();
+
+  // ปฏิเสธไฟล์สตรีมมิ่ง, Manifests, และ Init Chunks
+  const streamingBlacklist = [
+    ".m3u8", ".mpd", ".m4s", ".ts", "video/mp2t", "application/x-mpegurl",
+    "application/vnd.apple.mpegurl", "application/dash+xml", "init.mp4",
+    "/hls/", "/dash/", "segment-", "seg-", "chunk-"
+  ];
+  for (const ind of streamingBlacklist) {
+    if (urlLower.includes(ind) || mimeLower.includes(ind)) return false;
+  }
+
+  // ต้องเป็น MIME type ของวิดีโอแท้ หรือมีนามสกุล .mp4, .webm
+  const isDirectMime = mimeLower.includes("video/mp4") || mimeLower.includes("video/webm") || mimeLower.includes("video/quicktime");
+  const isDirectExt = urlLower.includes(".mp4") || urlLower.includes(".webm");
+
+  if (!isDirectMime && !isDirectExt) return false;
+
+  // วิดีโอ MP4 แท้ควรมีขนาด > 50 KB (ป้องกัน Header เปล่าหรือ Chunks ชำรุด)
+  if (contentLength !== null && contentLength > 0 && contentLength < 51200) return false;
+
+  return true;
+}
+
+// ============================================================================
 // Network Sniffer: ดักจับรูปภาพและวิดีโอจาก HTTP Response จริง พร้อม Smart Deduplication
 // ============================================================================
 chrome.webRequest.onCompleted.addListener(
@@ -87,19 +117,21 @@ chrome.webRequest.onCompleted.addListener(
         } else if (name === "content-type") {
           contentType = h.value.toLowerCase();
         } else if (name === "etag") {
-          etag = h.value.replace(/["\s]/g, ""); // ลบเครื่องหมายคำพูดรอบ etag
+          etag = h.value.replace(/["\s]/g, "");
         }
       }
     }
 
-    // กรองประเภทไฟล์: เฉพาะ Image และ Video/Media
     const isImage = details.type === "image" || (contentType && contentType.startsWith("image/"));
     const isMedia = details.type === "media" || (contentType && contentType.startsWith("video/"));
 
     if (!isImage && !isMedia) return;
 
-    // กรอง Tracking Pixels หรือ Spacer GIFs ขนาดจิ๋ว (< 30 bytes) ที่ไม่มีเนื้อหาจริง
-    if (contentLength !== null && contentLength > 0 && contentLength < 30) return;
+    // กรอง Tracking Pixels หรือ Spacer GIFs ขนาดจิ๋ว (< 30 bytes)
+    if (isImage && contentLength !== null && contentLength > 0 && contentLength < 30) return;
+
+    // กรองเฉพาะ Standalone MP4/WebM Videos เท่านั้น ปฏิเสธ Chunks สตรีมมิ่ง
+    if (isMedia && !isStandaloneMp4Video(details.url, contentType, contentLength)) return;
 
     const normalizedUrl = normalizeImageUrl(details.url);
 
@@ -126,9 +158,17 @@ chrome.webRequest.onCompleted.addListener(
 );
 
 /**
- * บันทึกรายการรูปภาพลง Session Storage พร้อม 4-Tier Deduplication
+ * บันทึกรายการรูปภาพลง Session Storage พร้อม 4-Tier Deduplication & Tab Capture Toggles
  */
 async function addCapturedItem(tabId, item) {
+  // ตรวจสอบการตั้งค่าเปิด/ปิดดักจับของแท็บนี้
+  const tabSettingsKey = "tab_settings_" + tabId;
+  const tabSettingsStore = await chrome.storage.session.get(tabSettingsKey);
+  const tabSettings = tabSettingsStore?.[tabSettingsKey] || {};
+
+  if (item.resourceType === "image" && tabSettings.captureImages === false) return;
+  if (item.resourceType === "media" && tabSettings.captureVideos === false) return;
+
   const key = "captured-" + tabId;
   const store = await chrome.storage.session.get(key);
   const list = store[key] || [];
