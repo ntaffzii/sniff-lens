@@ -70,27 +70,38 @@ function normalizeImageUrl(rawUrl) {
 // ============================================================================
 // Helper: ตรวจสอบวิดีโอ MP4 / WebM แท้ที่ไม่ได้เข้ารหัส และปฏิเสธ Streaming Chunks
 // ============================================================================
-function isStandaloneMp4Video(rawUrl, contentType, contentLength) {
+function isStandaloneMp4Video(rawUrl, contentType, contentLength, statusCode, responseHeaders) {
+  // 1. ปฏิเสธ HTTP 206 Partial Content เด็ดขาด (เป็นเศษ Chunks)
+  if (statusCode === 206) return false;
+
   const urlLower = rawUrl.toLowerCase();
   const mimeLower = (contentType || "").toLowerCase();
 
-  // ปฏิเสธไฟล์สตรีมมิ่ง, Manifests, และ Init Chunks
+  // 2. ปฏิเสธหากมี Header Content-Range (เป็นเศษ Byte-Range)
+  if (responseHeaders && Array.isArray(responseHeaders)) {
+    for (const h of responseHeaders) {
+      if (h.name.toLowerCase() === "content-range") return false;
+    }
+  }
+
+  // 3. ปฏิเสธไฟล์สตรีมมิ่ง, Manifests, และ Byte-Range Chunks ทุกประเภท (Facebook / Web Chunks)
   const streamingBlacklist = [
     ".m3u8", ".mpd", ".m4s", ".ts", "video/mp2t", "application/x-mpegurl",
     "application/vnd.apple.mpegurl", "application/dash+xml", "init.mp4",
-    "/hls/", "/dash/", "segment-", "seg-", "chunk-"
+    "/hls/", "/dash/", "segment-", "seg-", "chunk-", "bytestart=", "byteend=",
+    "range=", "bytes=", "sq=", "initsegment=", "_fmp4"
   ];
   for (const ind of streamingBlacklist) {
     if (urlLower.includes(ind) || mimeLower.includes(ind)) return false;
   }
 
-  // ต้องเป็น MIME type ของวิดีโอแท้ หรือมีนามสกุล .mp4, .webm
+  // 4. ต้องเป็น MIME type ของวิดีโอแท้ หรือมีนามสกุล .mp4, .webm
   const isDirectMime = mimeLower.includes("video/mp4") || mimeLower.includes("video/webm") || mimeLower.includes("video/quicktime");
   const isDirectExt = urlLower.includes(".mp4") || urlLower.includes(".webm");
 
   if (!isDirectMime && !isDirectExt) return false;
 
-  // วิดีโอ MP4 แท้ควรมีขนาด > 50 KB (ป้องกัน Header เปล่าหรือ Chunks ชำรุด)
+  // 5. วิดีโอ MP4 แท้ควรมีขนาด > 50 KB (ป้องกัน Header เปล่าหรือ Chunks ชำรุด)
   if (contentLength !== null && contentLength > 0 && contentLength < 51200) return false;
 
   return true;
@@ -131,8 +142,8 @@ chrome.webRequest.onCompleted.addListener(
     // กรอง Tracking Pixels หรือ Spacer GIFs ขนาดจิ๋ว (< 30 bytes)
     if (isImage && contentLength !== null && contentLength > 0 && contentLength < 30) return;
 
-    // กรองเฉพาะ Standalone MP4/WebM Videos เท่านั้น ปฏิเสธ Chunks สตรีมมิ่งย่อย
-    if (isDirectVideo && !isHlsStream && !isStandaloneMp4Video(details.url, contentType, contentLength)) return;
+    // กรองเฉพาะ Standalone MP4/WebM Videos เท่านั้น ปฏิเสธ Chunks สตรีมมิ่งย่อยและ Byte-Range Chunks
+    if (isDirectVideo && !isHlsStream && !isStandaloneMp4Video(details.url, contentType, contentLength, details.statusCode, details.responseHeaders)) return;
 
     const normalizedUrl = normalizeImageUrl(details.url);
 
@@ -351,15 +362,29 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true;
   }
 
-  // ขอสถานะการทำงานของ Native Auto-Slide
-  if (msg.type === "NATIVE_GET_STATUS") {
-    const targetTabId = msg.tabId;
-    const active = Boolean(targetTabId && nativeAutoSlideLoops[targetTabId]);
-    const intervalMs = nativeAutoSlideLoops[targetTabId]?.intervalMs || 2000;
-    sendResponse({ isActive: active, intervalMs });
+  // รับข้อมูลวิดีโอที่ Content Script สกัดได้จากหน้าเว็บ (เช่น Facebook HD/SD MP4)
+  if (msg.type === "ADD_PAGE_EXTRACTED_MEDIA") {
+    const tabId = sender.tab?.id || msg.tabId;
+    if (tabId && tabId >= 0 && msg.url) {
+      const normalizedUrl = normalizeImageUrl(msg.url);
+      addCapturedItem(tabId, {
+        id: "cap_" + Date.now() + "_" + Math.random().toString(36).slice(2, 7),
+        url: msg.url,
+        normalizedUrl,
+        etag: null,
+        fingerprint: `extracted_video_${normalizedUrl}`,
+        resourceType: msg.resourceType || "media",
+        contentType: msg.contentType || "video/mp4",
+        size: msg.size || null,
+        statusCode: 200,
+        timestamp: Date.now()
+      });
+      sendResponse({ status: "added" });
+    }
     return true;
   }
 });
+
 
 // ============================================================================
 // Chrome Debugger Protocol Implementation for 100% Genuine isTrusted Keys

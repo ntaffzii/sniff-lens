@@ -255,5 +255,113 @@ window.addEventListener("keydown", (e) => {
   }
 });
 
+// ============================================================================
+// Smart Page Video Extractor (ดึง Full HD/SD MP4 จาก Facebook Reels, Shopee, และ Web)
+// ============================================================================
+const extractedVideoUrls = new Set();
+
+function cleanMediaUrl(raw) {
+  if (!raw || typeof raw !== "string") return null;
+  let url = raw.replace(/\\\//g, "/").replace(/\\u0026/g, "&").replace(/&amp;/g, "&").trim();
+  // ตัด byte range parameters เพื่อให้ได้ URL ของไฟล์ตัวเต็ม
+  try {
+    const u = new URL(url);
+    if (u.searchParams.has("bytestart") || u.searchParams.has("byteend")) {
+      u.searchParams.delete("bytestart");
+      u.searchParams.delete("byteend");
+      url = u.href;
+    }
+  } catch {}
+  return url;
+}
+
+function scanAndExtractPageVideos() {
+  const foundUrls = new Set();
+
+  // 1. ตรวจสอบ OpenGraph / Twitter Meta Tags
+  const metaSelectors = [
+    'meta[property="og:video"]',
+    'meta[property="og:video:url"]',
+    'meta[property="og:video:secure_url"]',
+    'meta[name="twitter:player:stream"]'
+  ];
+  for (const sel of metaSelectors) {
+    const el = document.querySelector(sel);
+    const content = el?.getAttribute("content");
+    if (content && content.startsWith("http") && (content.includes(".mp4") || content.includes(".webm"))) {
+      const cleaned = cleanMediaUrl(content);
+      if (cleaned) foundUrls.add(cleaned);
+    }
+  }
+
+  // 2. ตรวจสอบแท็ก <video src="..."> และ <source src="..."> แท้ที่ไม่ใช่ blob:
+  const videoElements = document.querySelectorAll("video, video source");
+  videoElements.forEach((el) => {
+    const src = el.src || el.getAttribute("src");
+    if (src && src.startsWith("http") && !src.startsWith("blob:") && !src.startsWith("data:")) {
+      if (src.includes(".mp4") || src.includes(".webm")) {
+        const cleaned = cleanMediaUrl(src);
+        if (cleaned) foundUrls.add(cleaned);
+      }
+    }
+  });
+
+  // 3. สแกน Script Tags และ Facebook Internal Relay Data (browser_native_hd_url, playable_url_quality_hd)
+  const scripts = document.querySelectorAll("script");
+  scripts.forEach((s) => {
+    const text = s.textContent;
+    if (!text || text.length < 50) return;
+
+    if (text.includes("browser_native_hd_url") || text.includes("playable_url_quality_hd") || text.includes("browser_native_sd_url") || text.includes("playable_url") || text.includes("hd_src")) {
+      const regex = /"(?:browser_native_hd_url|playable_url_quality_hd|browser_native_sd_url|playable_url|hd_src|sd_src)"\s*:\s*"([^"]+)"/g;
+      let match;
+      while ((match = regex.exec(text)) !== null) {
+        const cleaned = cleanMediaUrl(match[1]);
+        if (cleaned && cleaned.startsWith("http")) {
+          foundUrls.add(cleaned);
+        }
+      }
+    }
+  });
+
+  // 4. ส่ง URL ที่พบไปยัง background.js (O(1) lookups)
+  foundUrls.forEach((url) => {
+    if (!extractedVideoUrls.has(url)) {
+      extractedVideoUrls.add(url);
+      chrome.runtime.sendMessage({
+        type: "ADD_PAGE_EXTRACTED_MEDIA",
+        url: url,
+        resourceType: "media",
+        contentType: "video/mp4"
+      }).catch(() => {});
+    }
+  });
+}
+
+// สแกนเมื่อโหลดหน้าเว็บ, เลื่อนหน้าจอ, หรือ DOM เปลี่ยนแปลง (Debounced O(1))
+let scanTimer = null;
+function debouncedScanVideos() {
+  if (scanTimer) clearTimeout(scanTimer);
+  scanTimer = setTimeout(scanAndExtractPageVideos, 400);
+}
+
+window.addEventListener("load", debouncedScanVideos);
+window.addEventListener("scroll", debouncedScanVideos, { passive: true });
+document.addEventListener("DOMContentLoaded", debouncedScanVideos);
+
+const videoDomObserver = new MutationObserver(() => {
+  debouncedScanVideos();
+});
+if (document.body) {
+  videoDomObserver.observe(document.body, { childList: true, subtree: true });
+} else {
+  document.addEventListener("DOMContentLoaded", () => {
+    if (document.body) {
+      videoDomObserver.observe(document.body, { childList: true, subtree: true });
+    }
+  });
+}
+
+
 
 
