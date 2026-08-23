@@ -5,9 +5,10 @@
 const MAX_ITEMS_PER_TAB = 300;
 const activeBatchDownloads = {};
 
-// ตั้งค่า Dynamic Header Modification (แก้ปัญหา TikTok/Facebook 403 Forbidden ใน Extension)
+// ตั้งค่า Dynamic Header Modification (ให้มีผลเฉพาะคำขอที่ส่งจาก Extension เท่านั้น ไม่รบกวนหน้าเว็บปกติ)
 async function setupRefererRules() {
   if (!chrome.declarativeNetRequest) return;
+  const extId = chrome.runtime.id;
   const rules = [
     {
       id: 101,
@@ -21,6 +22,7 @@ async function setupRefererRules() {
       },
       condition: {
         urlFilter: "*tiktok*",
+        initiatorDomains: [extId],
         resourceTypes: ["xmlhttprequest", "media", "image", "other"]
       }
     },
@@ -36,21 +38,7 @@ async function setupRefererRules() {
       },
       condition: {
         urlFilter: "*byteoversea*",
-        resourceTypes: ["xmlhttprequest", "media", "image", "other"]
-      }
-    },
-    {
-      id: 103,
-      priority: 1,
-      action: {
-        type: "modifyHeaders",
-        requestHeaders: [
-          { header: "Referer", operation: "set", value: "https://www.facebook.com/" },
-          { header: "Origin", operation: "set", value: "https://www.facebook.com" }
-        ]
-      },
-      condition: {
-        urlFilter: "*fbcdn.net*",
+        initiatorDomains: [extId],
         resourceTypes: ["xmlhttprequest", "media", "image", "other"]
       }
     }
@@ -65,6 +53,7 @@ async function setupRefererRules() {
     console.warn("[DeclarativeNetRequest] Setup rule error:", err);
   }
 }
+
 
 // ติดตั้ง Context Menus และตั้งค่าเริ่มต้น
 chrome.runtime.onInstalled.addListener(() => {
