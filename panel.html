@@ -76,6 +76,16 @@
     border-radius: 9999px;
     font-size: 9px;
     font-weight: 700;
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+  .live-badge:hover {
+    filter: brightness(1.2);
+  }
+  .live-badge.paused {
+    background: rgba(239, 68, 68, 0.15);
+    border-color: rgba(239, 68, 68, 0.3);
+    color: #f87171;
   }
 
   .live-dot {
@@ -86,6 +96,12 @@
     box-shadow: 0 0 6px #10b981;
     animation: pulse 1.8s infinite;
   }
+  .live-badge.paused .live-dot {
+    background: #ef4444;
+    box-shadow: 0 0 6px #ef4444;
+    animation: none;
+  }
+
 
   @keyframes pulse {
     0%, 100% { opacity: 1; transform: scale(1); }
@@ -708,8 +724,9 @@
       <div class="brand-title">
         <img src="icons/icon-32.png" width="22" height="22" style="filter: drop-shadow(0 0 8px rgba(16, 185, 129, 0.5));" alt="Logo" />
         <span>Network Sniffer</span>
-        <span class="live-badge"><span class="live-dot"></span>LIVE</span>
+        <span class="live-badge" id="panel-live-badge" title="Click to Pause / Resume Live Sniffing"><span class="live-dot"></span><span id="panel-live-text">LIVE</span></span>
       </div>
+
 
       <span id="stat-count" style="font-size: 10.5px; color: var(--text-muted); font-weight: 600;">0 items</span>
     </div>
@@ -1057,10 +1074,12 @@
   <!-- Toast Element -->
   <div id="toast">📋 Copied to clipboard</div>
 
+  <script src="mp4_remuxer.js"></script>
   <script src="hls_stitcher.js"></script>
   <script src="panel.js"></script>
 </body>
 </html>
+
 
 
 

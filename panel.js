@@ -25,6 +25,60 @@ const DEFAULT_GLOBAL_SETTINGS = {
 // Active Tab-Scoped Settings
 let userSettings = { ...DEFAULT_GLOBAL_SETTINGS };
 
+// Master Sniffing Switch UI in Side Panel
+const panelLiveBadge = document.getElementById("panel-live-badge");
+const panelLiveText = document.getElementById("panel-live-text");
+
+function updatePanelSniffUI(enabled) {
+  if (!panelLiveBadge) return;
+  if (enabled) {
+    panelLiveBadge.classList.remove("paused");
+    if (panelLiveText) panelLiveText.textContent = "LIVE";
+    panelLiveBadge.title = "Sniffing Active (Click to Pause)";
+  } else {
+    panelLiveBadge.classList.add("paused");
+    if (panelLiveText) panelLiveText.textContent = "PAUSED";
+    panelLiveBadge.title = "Sniffing Paused (Click to Resume)";
+  }
+}
+
+panelLiveBadge?.addEventListener("click", () => {
+  chrome.runtime.sendMessage({ type: "GET_SNIFFING_STATE", tabId: currentTabId }, (res) => {
+    const currentState = res?.enabled !== false;
+    const newState = !currentState;
+    chrome.runtime.sendMessage({
+      type: "SET_SNIFFING_STATE",
+      enabled: newState,
+      tabId: currentTabId,
+      isGlobal: true
+    }, () => {
+      updatePanelSniffUI(newState);
+      showToast(newState ? "🟢 Network Sniffing Resumed" : "⏸️ Network Sniffing Paused (0% CPU)");
+    });
+  });
+});
+
+/**
+ * ค้นหา Audio Track ที่ตรงกับวิดีโอนี้เพื่อนำมารวมกัน (Smart Stream Matcher)
+ */
+function findMatchingAudioTrack(videoItem, allItems) {
+  if (!allItems || !allItems.length) return null;
+  const audioTracks = allItems.filter((it) => it.isAudio || it.contentType?.startsWith("audio/"));
+  if (!audioTracks.length) return null;
+
+  let closestAudio = null;
+  let minTimeDiff = Infinity;
+  for (const a of audioTracks) {
+    const diff = Math.abs((a.timestamp || 0) - (videoItem.timestamp || 0));
+    if (diff < minTimeDiff) {
+      minTimeDiff = diff;
+      closestAudio = a;
+    }
+  }
+  return closestAudio;
+}
+
+
 // Debounce helper for high-performance input events (O(1) overhead)
 function debounce(fn, waitMs = 150) {
   let timer = null;
@@ -516,8 +570,8 @@ document.getElementById("cancel-hls-btn")?.addEventListener("click", () => {
   showToast("⏹️ Cancelled HLS stitching");
 });
 
-// Single Item Download Trigger (Direct In-Memory Blob Pipeline)
-async function downloadSingleItem(item, index = 1, customFilename = null) {
+// Single Item Download Trigger (Direct In-Memory Blob & Fast Remux Pipeline)
+async function downloadSingleItem(item, index = 1, customFilename = null, forceAudioMerge = true) {
   if (item.resourceType === "hls_stream") {
     triggerHlsStitchDownload(item, index, customFilename);
     return;
@@ -527,6 +581,51 @@ async function downloadSingleItem(item, index = 1, customFilename = null) {
   const folder = userSettings.subfolder || "captured";
   const subfolder = folder ? folder.replace(/[\\/]+$/, "") + "/" : "";
   const fullPath = subfolder + filename;
+
+  const isVideo = item.resourceType === "media" && !item.isAudio;
+  const matchingAudio = isVideo && forceAudioMerge ? findMatchingAudioTrack(item, items) : null;
+
+  // หากวิดีโอนี้มีแทร็กเสียงแยกต่างหาก (Instagram/Reels DASH) ให้รวมไฟล์ทันทีในเบราว์เซอร์ (O(N) Fast Remuxer)
+  if (isVideo && matchingAudio && typeof remuxVideoAndAudio === "function") {
+    showToast(`⚡ Remuxing 1080p Video + Audio Track (${filename})...`);
+    try {
+      const [vRes, aRes] = await Promise.all([
+        fetch(item.url),
+        fetch(matchingAudio.url)
+      ]);
+
+      if (vRes.ok && aRes.ok) {
+        const [vBuf, aBuf] = await Promise.all([
+          vRes.arrayBuffer(),
+          aRes.arrayBuffer()
+        ]);
+
+        const mergedBlob = await remuxVideoAndAudio(vBuf, aBuf);
+        const blobUrl = URL.createObjectURL(mergedBlob);
+
+        chrome.downloads.download({
+          url: blobUrl,
+          filename: fullPath,
+          saveAs: Boolean(userSettings.saveAsPrompt)
+        }, (downloadId) => {
+          if (chrome.runtime.lastError || !downloadId) {
+            const a = document.createElement("a");
+            a.href = blobUrl;
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+          }
+          setTimeout(() => URL.revokeObjectURL(blobUrl), 30000);
+        });
+
+        showToast(`✅ Downloaded Merged Video+Audio: ${filename}`);
+        return;
+      }
+    } catch (err) {
+      console.warn("[Remuxer] Fast remux failed, falling back to direct video:", err);
+    }
+  }
 
   showToast(`💾 Downloading: ${filename}...`);
 
@@ -575,6 +674,7 @@ async function downloadSingleItem(item, index = 1, customFilename = null) {
     saveAs: userSettings.saveAsPrompt
   });
 }
+
 
 
 // ============================================================================
@@ -703,11 +803,13 @@ function updateLightboxContent() {
     } else if (item.isAudio) {
       dlBtn.textContent = "💾 Download Audio Track";
     } else if (item.resourceType === "media") {
-      dlBtn.textContent = "💾 Download Video";
+      const hasAudio = Boolean(findMatchingAudioTrack(item, items));
+      dlBtn.textContent = hasAudio ? "⚡ Download Merged Video + Audio (1080p)" : "💾 Download Video";
     } else {
       dlBtn.textContent = "💾 Download Image";
     }
   }
+
 
 
   if (lightboxSize) lightboxSize.textContent = humanSize(item.size);
@@ -1481,9 +1583,10 @@ chrome.runtime.onMessage.addListener((msg) => {
       fbSlideIndicator.textContent = `● Step ${msg.stepIndex + 1}/${msg.totalSteps} [${msg.key}]`;
     }
   }
-  if ((msg.type === "MACRO_SEQUENCE_STOPPED" || msg.type === "MACRO_SEQUENCE_COMPLETED") && msg.tabId === currentTabId) {
-    setFbPlayState(false);
-    showToast(msg.type === "MACRO_SEQUENCE_COMPLETED" ? "🏁 Macro sequence completed!" : "⏹️ Macro stopped");
+  if (msg.type === "SNIFFING_STATE_CHANGED") {
+    if (msg.isGlobal || msg.tabId === currentTabId) {
+      updatePanelSniffUI(msg.enabled);
+    }
   }
 });
 
@@ -1497,6 +1600,10 @@ chrome.tabs.onActivated.addListener(async (activeInfo) => {
   await loadTabMacroState(activeInfo.tabId);
   await loadItems();
   await checkAutoSlideTabStatus();
+
+  chrome.runtime.sendMessage({ type: "GET_SNIFFING_STATE", tabId: currentTabId }, (res) => {
+    updatePanelSniffUI(res?.enabled !== false);
+  });
 });
 
 // Initialize on Panel Launch
@@ -1504,9 +1611,14 @@ getActiveTabInfo().then(() => {
   loadUserSettings().then(() => {
     loadTabMacroState(currentTabId).then(() => {
       loadItems().then(checkAutoSlideTabStatus);
+
+      chrome.runtime.sendMessage({ type: "GET_SNIFFING_STATE", tabId: currentTabId }, (res) => {
+        updatePanelSniffUI(res?.enabled !== false);
+      });
     });
   });
 });
+
 
 
 

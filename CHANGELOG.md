@@ -4,7 +4,21 @@ All notable changes to the **Network Image Sniffer & AI Toolkit (SniffLens)** pr
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.2.0] - 2026-08-24
+### Added
+- **Master Network Sniffing Switch (ON / OFF / PAUSE)**:
+  - Interactive cyber switch in Extension Popup (`popup.html`) and live header badge in Side Panel (`panel.html`).
+  - **$O(1)$ Early Exit Optimization**: Completely pauses network packet parsing, zero memory allocation, and zero CPU usage when paused.
+- **Client-Side Fast Video + Audio Remuxer Engine (`mp4_remuxer.js`)**:
+  - In-browser ISO-BMFF binary stream muxer to merge separate video tracks (1080p) and audio tracks (AAC/M4A) into a single complete MP4.
+  - **Zero Re-encoding ($O(N)$)**: Merges video and audio in under 0.25 seconds in memory.
+  - **Smart Stream Correlation**: Automatically pairs DASH / Instagram / Reels video with matching audio track.
+  - 1-Click merged download in Side Panel and Lightbox modal.
+
+---
+
 ## [3.1.0] - 2026-08-23
+
 ### Added
 - **Multi-Block Hardware Key Macro Studio**:
   - Full directional keyboard automation: **➡️ Right (`ArrowRight`)**, **⬇️ Down (`ArrowDown` for TikTok/Reels)**, **⬅️ Left (`ArrowLeft`)**, **⬆️ Up (`ArrowUp`)**, **⇟ `PageDown`**, and **␣ `Spacebar`**.

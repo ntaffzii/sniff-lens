@@ -34,6 +34,58 @@ async function initPopup() {
     if (folderEl) folderEl.textContent = settings.subfolder || "Downloads";
     if (patternEl) patternEl.textContent = settings.filenamePattern || "{orig}";
 
+    // Master Sniffing Switch Logic
+    const masterCb = document.getElementById("master-sniff-cb");
+    const liveBadge = document.getElementById("popup-live-badge");
+    const liveText = document.getElementById("popup-live-text");
+    const switchSub = document.getElementById("switch-subtitle");
+
+    function updateSniffUI(enabled) {
+      if (masterCb) masterCb.checked = enabled;
+      if (liveBadge) {
+        if (enabled) {
+          liveBadge.classList.remove("paused");
+          if (liveText) liveText.textContent = "ACTIVE";
+        } else {
+          liveBadge.classList.add("paused");
+          if (liveText) liveText.textContent = "PAUSED";
+        }
+      }
+      if (switchSub) {
+        if (enabled) {
+          switchSub.textContent = "Active (O(1) Live)";
+          switchSub.style.color = "#34d399";
+        } else {
+          switchSub.textContent = "Paused (0% Resource)";
+          switchSub.style.color = "#f87171";
+        }
+      }
+    }
+
+    // Get initial state
+    chrome.runtime.sendMessage({ type: "GET_SNIFFING_STATE", tabId: tab.id }, (res) => {
+      updateSniffUI(res?.enabled !== false);
+    });
+
+    // Toggle listener
+    masterCb?.addEventListener("change", () => {
+      const newState = masterCb.checked;
+      updateSniffUI(newState);
+      chrome.runtime.sendMessage({
+        type: "SET_SNIFFING_STATE",
+        enabled: newState,
+        tabId: tab.id,
+        isGlobal: true
+      });
+    });
+
+    liveBadge?.addEventListener("click", () => {
+      if (masterCb) {
+        masterCb.checked = !masterCb.checked;
+        masterCb.dispatchEvent(new Event("change"));
+      }
+    });
+
     // Open Side Panel button
     document.getElementById("open-panel-btn")?.addEventListener("click", async () => {
       await chrome.sidePanel.open({ tabId: tab.id });
@@ -45,3 +97,4 @@ async function initPopup() {
 }
 
 initPopup();
+

@@ -1,9 +1,27 @@
 // ============================================================================
-// Network Image Sniffer & AI Toolkit - Background Service Worker (v3.0.0)
+// Network Image Sniffer & AI Toolkit - Background Service Worker (v3.2.0)
 // ============================================================================
 
 const MAX_ITEMS_PER_TAB = 300;
 const activeBatchDownloads = {};
+
+// Master Network Sniffing State Management (O(1) Resource Optimization)
+let isGlobalSniffingActive = true;
+const tabSniffingOverrides = {}; // tabId -> boolean
+
+function isSniffingActive(tabId) {
+  if (tabId && tabSniffingOverrides[tabId] !== undefined) {
+    return tabSniffingOverrides[tabId];
+  }
+  return isGlobalSniffingActive;
+}
+
+// โหลดค่าเริ่มต้นจาก Storage
+chrome.storage.local.get("global_sniffing_active").then((res) => {
+  if (res && res.global_sniffing_active !== undefined) {
+    isGlobalSniffingActive = Boolean(res.global_sniffing_active);
+  }
+});
 
 // ตั้งค่า Dynamic Header Modification (ให้มีผลเฉพาะคำขอที่ส่งจาก Extension เท่านั้น ไม่รบกวนหน้าเว็บปกติ)
 async function setupRefererRules() {
@@ -168,9 +186,11 @@ function isPlayableVideoRequest(rawUrl, contentType) {
 // ============================================================================
 chrome.webRequest.onCompleted.addListener(
   (details) => {
-    // ข้าม request ที่ไม่ได้มาจากแท็บปกติ
+    // ⚡ Early Exit O(1): ข้ามทันทีหากปิดสวิตช์ดักจับเพื่อประหยัด CPU/RAM 100%
+    if (!isSniffingActive(details.tabId)) return;
     if (details.tabId < 0) return;
     if (details.url.startsWith("chrome-extension://") || details.url.startsWith("data:")) return;
+
 
     let contentLength = null;
     let contentType = null;
@@ -425,6 +445,34 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       const items = store[key] || [];
       sendResponse({ count: items.length, items });
     });
+    return true;
+  }
+
+  // จัดการเปิด/ปิด Master Network Sniffing Switch (Global & Tab Level)
+  if (msg.type === "SET_SNIFFING_STATE") {
+    const targetTabId = msg.tabId;
+    const newState = Boolean(msg.enabled);
+    if (msg.isGlobal) {
+      isGlobalSniffingActive = newState;
+      chrome.storage.local.set({ global_sniffing_active: newState });
+    } else if (targetTabId) {
+      tabSniffingOverrides[targetTabId] = newState;
+    }
+    chrome.runtime.sendMessage({
+      type: "SNIFFING_STATE_CHANGED",
+      enabled: newState,
+      tabId: targetTabId,
+      isGlobal: Boolean(msg.isGlobal)
+    }).catch(() => {});
+    sendResponse({ status: "ok", enabled: newState });
+    return true;
+  }
+
+  // ขอสถานะการเปิด/ปิดดักจับของแท็บ
+  if (msg.type === "GET_SNIFFING_STATE") {
+    const targetTabId = msg.tabId;
+    const active = isSniffingActive(targetTabId);
+    sendResponse({ enabled: active, isGlobal: isGlobalSniffingActive });
     return true;
   }
 
