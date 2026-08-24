@@ -1,6 +1,7 @@
 // ============================================================================
-// SniffLens ISO-BMFF Fast MP4 Video + Audio Remuxer Engine (v3.2.0)
+// SniffLens ISO-BMFF Fast MP4 Video + Audio Remuxer Engine (v3.2.1)
 // High-Performance In-Browser Binary Stream Remuxer (Zero Re-Encoding, O(N))
+// Accurately merges 1 Video Track (vide) + 1 Audio Track (soun) into a standard MP4 container.
 // ============================================================================
 
 /**
@@ -12,21 +13,6 @@ class MP4BoxReader {
     this.view = new DataView(buffer);
     this.bytes = new Uint8Array(buffer);
     this.pos = 0;
-  }
-
-  readUint32() {
-    const val = this.view.getUint32(this.pos);
-    this.pos += 4;
-    return val;
-  }
-
-  readString(len = 4) {
-    let str = "";
-    for (let i = 0; i < len; i++) {
-      str += String.fromCharCode(this.bytes[this.pos + i]);
-    }
-    this.pos += len;
-    return str;
   }
 
   getBoxes(startOffset = 0, endOffset = this.buffer.byteLength) {
@@ -85,13 +71,27 @@ class MP4BoxReader {
 }
 
 /**
- * ปรับ Chunk Offsets (stco / co64) ของ Audio Track เมื่อนำไปต่อท้าย Video mdat
+ * ดึงประเภท Handler ของ Track ('vide' หรือ 'soun')
+ */
+function getTrackHandlerType(buffer, trakBox) {
+  const reader = new MP4BoxReader(buffer);
+  const subBoxes = reader.getBoxes(trakBox.payloadOffset, trakBox.offset + trakBox.size);
+  const hdlrBox = reader.findBoxRecursive(subBoxes, "hdlr");
+  if (!hdlrBox) return null;
+  const bytes = new Uint8Array(buffer);
+  let str = "";
+  for (let i = 0; i < 4; i++) {
+    str += String.fromCharCode(bytes[hdlrBox.payloadOffset + 8 + i]);
+  }
+  return str;
+}
+
+/**
+ * ปรับ Chunk Offsets (stco / co64) ของ Track ให้ตรงกับตำแหน่ง byte จริงในไฟล์ใหม่
  */
 function shiftTrackOffsets(buffer, trakBox, offsetDelta) {
-  const bytes = new Uint8Array(buffer);
   const view = new DataView(buffer);
   const reader = new MP4BoxReader(buffer);
-
   const subBoxes = reader.getBoxes(trakBox.payloadOffset, trakBox.offset + trakBox.size);
   const stcoBox = reader.findBoxRecursive(subBoxes, "stco");
   const co64Box = reader.findBoxRecursive(subBoxes, "co64");
@@ -116,9 +116,9 @@ function shiftTrackOffsets(buffer, trakBox, offsetDelta) {
 }
 
 /**
- * แก้ไข Track ID ใน tkhd box เพื่อไม่ให้ Track 1 (Video) และ Track 2 (Audio) ชนกัน
+ * ตั้งค่า Track ID และระดับเสียง (Volume) ใน tkhd box
  */
-function setTrackId(buffer, trakBox, newTrackId) {
+function setTrackIdAndVolume(buffer, trakBox, newTrackId, isAudio) {
   const view = new DataView(buffer);
   const reader = new MP4BoxReader(buffer);
   const subBoxes = reader.getBoxes(trakBox.payloadOffset, trakBox.offset + trakBox.size);
@@ -128,6 +128,9 @@ function setTrackId(buffer, trakBox, newTrackId) {
     const version = view.getUint8(tkhdBox.payloadOffset);
     const trackIdOffset = version === 1 ? tkhdBox.payloadOffset + 20 : tkhdBox.payloadOffset + 12;
     view.setUint32(trackIdOffset, newTrackId);
+
+    const volumeOffset = version === 1 ? tkhdBox.payloadOffset + 44 : tkhdBox.payloadOffset + 36;
+    view.setUint16(volumeOffset, isAudio ? 0x0100 : 0);
   }
 }
 
@@ -135,14 +138,13 @@ function setTrackId(buffer, trakBox, newTrackId) {
  * รวม Video MP4 Buffer และ Audio MP4 Buffer เข้าเป็นไฟล์เดียวกัน (Zero Re-encoding)
  * @param {ArrayBuffer} videoBuffer - ไบนารีของวิดีโอภาพ
  * @param {ArrayBuffer} audioBuffer - ไบนารีของแทร็กเสียง
- * @returns {Promise<Blob>} - ไฟล์ MP4 ตัวเต็มที่มีทั้งภาพและเสียง
+ * @returns {Promise<Blob>} - ไฟล์ MP4 ตัวเต็มที่มีทั้งภาพและเสียงสมบูรณ์
  */
 async function remuxVideoAndAudio(videoBuffer, audioBuffer) {
   if (!videoBuffer || !videoBuffer.byteLength) {
     throw new Error("Invalid Video buffer");
   }
   if (!audioBuffer || !audioBuffer.byteLength) {
-    // หากไม่มีไฟล์เสียง ส่งวิดีโอเดิมกลับ
     return new Blob([videoBuffer], { type: "video/mp4" });
   }
 
@@ -164,68 +166,96 @@ async function remuxVideoAndAudio(videoBuffer, audioBuffer) {
     return new Blob([videoBuffer], { type: "video/mp4" });
   }
 
-  // 1. สกัด Video Track Box จาก Video Moov
   const vSubBoxes = vReader.getBoxes(vMoov.payloadOffset, vMoov.offset + vMoov.size);
   const vTraks = vReader.findAllBoxesRecursive(vSubBoxes, "trak");
 
-  // 2. สกัด Audio Track Box จาก Audio Moov
   const aSubBoxes = aReader.getBoxes(aMoov.payloadOffset, aMoov.offset + aMoov.size);
   const aTraks = aReader.findAllBoxesRecursive(aSubBoxes, "trak");
 
-  if (!vTraks.length || !aTraks.length) {
+  // ค้นหา Video Track และ Audio Track ที่แท้จริงจาก Handler Type ('vide' และ 'soun')
+  const vTrakBox = vTraks.find((t) => getTrackHandlerType(videoBuffer, t) === "vide") || vTraks[0];
+  const aTrakBox = aTraks.find((t) => getTrackHandlerType(audioBuffer, t) === "soun") || aTraks[0];
+
+  if (!vTrakBox || !aTrakBox) {
     return new Blob([videoBuffer], { type: "video/mp4" });
   }
 
-  // โคลน Audio Track และเปลี่ยน Track ID เป็น 2
-  const primaryAudioTrak = aTraks[0];
-  const audioTrakSlice = audioBuffer.slice(primaryAudioTrak.offset, primaryAudioTrak.offset + primaryAudioTrak.size);
-  setTrackId(audioTrakSlice, { offset: 0, size: audioTrakSlice.byteLength, payloadOffset: primaryAudioTrak.headerSize }, 2);
+  // โคลน Track Slices เพื่อไม่ให้กระทบต้นฉบับ
+  const vTrakSlice = videoBuffer.slice(vTrakBox.offset, vTrakBox.offset + vTrakBox.size);
+  const aTrakSlice = audioBuffer.slice(aTrakBox.offset, aTrakBox.offset + aTrakBox.size);
 
-  // คำนวณส่วนต่าง Offset เพื่อเลื่อนตำแหน่ง Chunk ของ Audio ให้ไปอยู่หลัง Video mdat
-  const videoMdatPayloadSize = vMdat.payloadSize;
-  shiftTrackOffsets(audioTrakSlice, { offset: 0, size: audioTrakSlice.byteLength, payloadOffset: primaryAudioTrak.headerSize }, videoMdatPayloadSize);
+  // ตั้งค่า Track ID 1 สำหรับ Video และ Track ID 2 สำหรับ Audio
+  setTrackIdAndVolume(vTrakSlice, { offset: 0, size: vTrakSlice.byteLength, payloadOffset: vTrakBox.headerSize }, 1, false);
+  setTrackIdAndVolume(aTrakSlice, { offset: 0, size: aTrakSlice.byteLength, payloadOffset: aTrakBox.headerSize }, 2, true);
 
-  // 3. สร้าง Moov Box ใหม่ที่รวมทั้ง Video Trak และ Audio Trak
-  const newMoovChildren = [];
-  for (const box of vSubBoxes) {
-    newMoovChildren.push(videoBuffer.slice(box.offset, box.offset + box.size));
+  // สกัดกล่องอื่นๆ ภายใน moov (mvhd, udta) จากวิดีโอ
+  const nonTrakBoxes = [];
+  for (const b of vSubBoxes) {
+    if (b.type !== "trak") {
+      const slice = videoBuffer.slice(b.offset, b.offset + b.size);
+      if (b.type === "mvhd") {
+        const view = new DataView(slice);
+        const version = view.getUint8(b.headerSize);
+        const nextTrackOffset = version === 1 ? b.headerSize + 108 : b.headerSize + 96;
+        if (nextTrackOffset + 4 <= slice.byteLength) {
+          view.setUint32(nextTrackOffset, 3); // next_track_ID = 3
+        }
+      }
+      nonTrakBoxes.push(slice);
+    }
   }
-  newMoovChildren.push(audioTrakSlice);
 
-  let newMoovPayloadSize = 0;
-  newMoovChildren.forEach((c) => (newMoovPayloadSize += c.byteLength));
+  // คำนวณขนาดและตำแหน่ง byte offset ที่แท้จริงของไฟล์ใหม่
+  const ftypPart = vFtyp ? videoBuffer.slice(vFtyp.offset, vFtyp.offset + vFtyp.size) : new ArrayBuffer(0);
+  const ftypLength = ftypPart.byteLength;
 
+  let moovPayloadSize = 0;
+  nonTrakBoxes.forEach((b) => (moovPayloadSize += b.byteLength));
+  moovPayloadSize += vTrakSlice.byteLength + aTrakSlice.byteLength;
+  const newMoovSize = 8 + moovPayloadSize;
+
+  const newMdatHeaderSize = 8;
+  const newMdatPayloadOffset = ftypLength + newMoovSize + newMdatHeaderSize;
+
+  // คำนวณส่วนต่าง Offset (Delta) เพื่อปรับ stco / co64 ทั้งแทร็กภาพและแทร็กเสียง
+  const vOffsetDelta = newMdatPayloadOffset - vMdat.payloadOffset;
+  const aOffsetDelta = (newMdatPayloadOffset + vMdat.payloadSize) - aMdat.payloadOffset;
+
+  // ปรับ Chunk Offsets ใน stco / co64 ให้ตรงกับตำแหน่งจริงในไฟล์ใหม่
+  shiftTrackOffsets(vTrakSlice, { offset: 0, size: vTrakSlice.byteLength, payloadOffset: vTrakBox.headerSize }, vOffsetDelta);
+  shiftTrackOffsets(aTrakSlice, { offset: 0, size: aTrakSlice.byteLength, payloadOffset: aTrakBox.headerSize }, aOffsetDelta);
+
+  // สร้าง moov header ใหม่
   const newMoovHeader = new ArrayBuffer(8);
   const newMoovHeaderView = new DataView(newMoovHeader);
-  newMoovHeaderView.setUint32(0, newMoovPayloadSize + 8);
+  newMoovHeaderView.setUint32(0, newMoovSize);
   newMoovHeaderView.setUint8(4, 0x6d); // 'm'
   newMoovHeaderView.setUint8(5, 0x6f); // 'o'
   newMoovHeaderView.setUint8(6, 0x6f); // 'o'
   newMoovHeaderView.setUint8(7, 0x76); // 'v'
 
-  // 4. สร้าง Mdat Box รวมก้อน Payload ของภาพและเสียง
+  // สร้าง mdat header ใหม่
+  const totalMdatPayloadSize = vMdat.payloadSize + aMdat.payloadSize;
   const newMdatHeader = new ArrayBuffer(8);
   const newMdatHeaderView = new DataView(newMdatHeader);
-  const totalMdatPayloadSize = vMdat.payloadSize + aMdat.payloadSize;
-  newMdatHeaderView.setUint32(0, totalMdatPayloadSize + 8);
+  newMdatHeaderView.setUint32(0, 8 + totalMdatPayloadSize);
   newMdatHeaderView.setUint8(4, 0x6d); // 'm'
   newMdatHeaderView.setUint8(5, 0x64); // 'd'
   newMdatHeaderView.setUint8(6, 0x61); // 'a'
   newMdatHeaderView.setUint8(7, 0x74); // 't'
 
-  const videoMdatPayload = videoBuffer.slice(vMdat.payloadOffset, vMdat.offset + vMdat.size);
-  const audioMdatPayload = audioBuffer.slice(aMdat.payloadOffset, aMdat.offset + aMdat.size);
-
-  // 5. รวมก้อน Binary ทั้งหมด
-  const ftypPart = vFtyp ? videoBuffer.slice(vFtyp.offset, vFtyp.offset + vFtyp.size) : new ArrayBuffer(0);
+  const vMdatPayload = videoBuffer.slice(vMdat.payloadOffset, vMdat.offset + vMdat.size);
+  const aMdatPayload = audioBuffer.slice(aMdat.payloadOffset, aMdat.offset + aMdat.size);
 
   const parts = [
     ftypPart,
     newMoovHeader,
-    ...newMoovChildren,
+    ...nonTrakBoxes,
+    vTrakSlice,
+    aTrakSlice,
     newMdatHeader,
-    videoMdatPayload,
-    audioMdatPayload
+    vMdatPayload,
+    aMdatPayload
   ];
 
   return new Blob(parts, { type: "video/mp4" });

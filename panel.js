@@ -797,18 +797,32 @@ function updateLightboxContent() {
   }
 
   const dlBtn = document.getElementById("lightbox-dl-btn");
+  const rawDlBtn = document.getElementById("lightbox-dl-raw-btn");
   if (dlBtn) {
     if (item.resourceType === "hls_stream") {
       dlBtn.textContent = "⚡ Stitch & Download HLS Video";
+      if (rawDlBtn) rawDlBtn.style.display = "none";
     } else if (item.isAudio) {
       dlBtn.textContent = "💾 Download Audio Track";
+      if (rawDlBtn) rawDlBtn.style.display = "none";
     } else if (item.resourceType === "media") {
       const hasAudio = Boolean(findMatchingAudioTrack(item, items));
-      dlBtn.textContent = hasAudio ? "⚡ Download Merged Video + Audio (1080p)" : "💾 Download Video";
+      if (hasAudio) {
+        dlBtn.textContent = "⚡ Download Merged Video + Audio (1080p)";
+        if (rawDlBtn) {
+          rawDlBtn.style.display = "inline-flex";
+          rawDlBtn.textContent = "🎬 Video Only (Muted)";
+        }
+      } else {
+        dlBtn.textContent = "💾 Download Video";
+        if (rawDlBtn) rawDlBtn.style.display = "none";
+      }
     } else {
       dlBtn.textContent = "💾 Download Image";
+      if (rawDlBtn) rawDlBtn.style.display = "none";
     }
   }
+
 
 
 
@@ -863,8 +877,17 @@ document.getElementById("lightbox-dl-btn")?.addEventListener("click", () => {
   const item = filteredItemsCache[currentLightboxIndex];
   if (!item) return;
   const customName = lightboxRenameInput?.value.trim() || generateFilename(item, currentLightboxIndex + 1);
-  downloadSingleItem(item, currentLightboxIndex + 1, customName);
+  downloadSingleItem(item, currentLightboxIndex + 1, customName, true);
 });
+
+// Download raw video only (without remuxing audio)
+document.getElementById("lightbox-dl-raw-btn")?.addEventListener("click", () => {
+  const item = filteredItemsCache[currentLightboxIndex];
+  if (!item) return;
+  const customName = lightboxRenameInput?.value.trim() || generateFilename(item, currentLightboxIndex + 1);
+  downloadSingleItem(item, currentLightboxIndex + 1, customName, false);
+});
+
 
 document.getElementById("lightbox-copy-btn")?.addEventListener("click", async () => {
   const item = filteredItemsCache[currentLightboxIndex];

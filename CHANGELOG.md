@@ -4,7 +4,17 @@ All notable changes to the **Network Image Sniffer & AI Toolkit (SniffLens)** pr
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.2.1] - 2026-08-24
+### Fixed
+- **ISO-BMFF Precise Chunk Offset (`stco`/`co64`) Calculation**:
+  - Fixed an issue where merged MP4 files failed to play with a 0:00:00 duration in Windows Media Player and video players.
+  - Calculated exact byte-level delta shifts for both video track and audio track `stco` / `co64` chunk offset tables.
+  - Added discrete `🎬 Video Only (Muted)` download option in Lightbox alongside `⚡ Download Merged Video + Audio (1080p)`.
+
+---
+
 ## [3.2.0] - 2026-08-24
+
 ### Added
 - **Master Network Sniffing Switch (ON / OFF / PAUSE)**:
   - Interactive cyber switch in Extension Popup (`popup.html`) and live header badge in Side Panel (`panel.html`).
