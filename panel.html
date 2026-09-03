@@ -306,6 +306,74 @@
     text-transform: uppercase;
   }
 
+  .platform-badge {
+    position: absolute;
+    top: 5px;
+    left: 26px;
+    z-index: 6;
+    background: rgba(15, 23, 42, 0.85);
+    backdrop-filter: blur(6px);
+    color: #f8fafc;
+    font-size: 8px;
+    font-weight: 700;
+    padding: 1.5px 5px;
+    border-radius: 4px;
+    display: inline-flex;
+    align-items: center;
+    gap: 2.5px;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+    max-width: 90px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .platform-badge.facebook {
+    background: rgba(24, 119, 242, 0.9);
+    border-color: #1877f2;
+    color: #ffffff;
+  }
+  .platform-badge.instagram {
+    background: linear-gradient(135deg, rgba(225, 48, 108, 0.95), rgba(131, 58, 180, 0.95));
+    border-color: #e1306c;
+    color: #ffffff;
+  }
+  .platform-badge.tiktok {
+    background: rgba(0, 0, 0, 0.92);
+    border-color: #00f2fe;
+    color: #00f2fe;
+  }
+  .platform-badge.youtube {
+    background: rgba(239, 68, 68, 0.9);
+    border-color: #ef4444;
+    color: #ffffff;
+  }
+  .platform-badge.x, .platform-badge.twitter {
+    background: rgba(0, 0, 0, 0.95);
+    border-color: rgba(255, 255, 255, 0.4);
+    color: #ffffff;
+  }
+  .platform-badge.threads {
+    background: rgba(0, 0, 0, 0.92);
+    border-color: #ffffff;
+    color: #ffffff;
+  }
+  .platform-badge.shopee {
+    background: rgba(238, 77, 45, 0.9);
+    border-color: #ee4d2d;
+    color: #ffffff;
+  }
+  .platform-badge.lazada {
+    background: rgba(15, 20, 110, 0.9);
+    border-color: #f57224;
+    color: #ffffff;
+  }
+  .platform-badge.web {
+    background: rgba(16, 185, 129, 0.85);
+    border-color: #10b981;
+    color: #ffffff;
+  }
+
   .dim-badge {
     position: absolute;
     bottom: 5px;
@@ -800,6 +868,7 @@
         <option value="all">All Types</option>
         <option value="image">🖼️ Images</option>
         <option value="media">🎥 Videos</option>
+        <option value="audio">🎵 Audio</option>
       </select>
       <select id="filter-size">
         <option value="0">All Sizes</option>
@@ -845,7 +914,7 @@
     <div class="lightbox-body">
       <button class="nav-btn prev" id="lightbox-prev" title="Previous item (◀ Arrow Key)">‹</button>
       <div class="lightbox-img-wrapper">
-        <img id="lightbox-img" src="" alt="Full preview" />
+        <img id="lightbox-img" src="" alt="Full preview" referrerpolicy="no-referrer" />
       </div>
       <button class="nav-btn next" id="lightbox-next" title="Next item (▶ Arrow Key)">›</button>
     </div>
@@ -855,6 +924,7 @@
       </div>
       <div class="lightbox-meta-row">
         <div class="meta-tag-group">
+          <span class="meta-tag" id="lightbox-platform" style="background: rgba(99, 102, 241, 0.25); color: #c7d2fe; border: 1px solid rgba(99, 102, 241, 0.4); font-weight: 700;">🌐 Facebook</span>
           <span class="meta-tag" id="lightbox-dim">1920 × 1080</span>
           <span class="meta-tag" id="lightbox-size">420 KB</span>
           <span class="meta-tag" id="lightbox-mime">image/jpeg</span>
@@ -909,9 +979,10 @@
           </label>
           <input type="text" id="setting-pattern-input" class="form-input" placeholder="{prefix}_{num3}" />
           <div class="chip-group">
-            <button class="chip-btn" id="preset-name-seq">🔢 Sequential ({prefix}_{num3})</button>
-            <button class="chip-btn" id="preset-name-domain">🏷️ By Domain ({domain}_{num3})</button>
-            <button class="chip-btn" id="preset-name-orig">📄 Original ({orig})</button>
+            <button class="chip-btn" id="preset-name-platform">🌐 [{platform}]_{orig}</button>
+            <button class="chip-btn" id="preset-name-seq">🔢 {prefix}_{num3}</button>
+            <button class="chip-btn" id="preset-name-domain">🏷️ {domain}_{num3}</button>
+            <button class="chip-btn" id="preset-name-orig">📄 {orig}</button>
           </div>
         </div>
 

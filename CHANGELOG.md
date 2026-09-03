@@ -4,6 +4,47 @@ All notable changes to the **Network Image Sniffer & AI Toolkit (SniffLens)** pr
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.6.1] - 2026-09-03
+### Fixed & Added
+- **Threads.com New Domain Support**:
+  - Extended platform detection in `background.js`, `panel.js`, and `content.js` to recognize `threads.com` (Threads' new primary domain) alongside the legacy `threads.net`.
+  - Added `declarativeNetRequest` rule (id: 103) to auto-inject correct `Referer: https://www.threads.com/` and `Origin` headers when the extension fetches Threads CDN media, preventing 403 errors on download.
+  - Preserved Meta CDN authorization tokens (`_nc_ohc`, `_nc_ht`, `_nc_cat`) for `threads.com` URLs in URL normalization pipeline.
+  - Platform badge `🧵 Threads` and `{platform}` filename token now trigger correctly on both `threads.com` and `threads.net`.
+
+---
+
+## [3.6.0] - 2026-08-27
+### Added
+- **Platform Source Tagging System**:
+  - Live visual platform badges on all media cards: `🌐 Facebook`, `📸 Instagram`, `🎵 TikTok`, `🎬 YouTube`, `𝕏 X`, `🧵 Threads`, `🛍️ Shopee`, `📦 Lazada`, and dynamic website domain chips.
+  - Dedicated Platform Source metadata badge in Lightbox Preview modal.
+  - New `{platform}` template parameter in filename generator for customizable downloads (e.g. `[{platform}]_{orig}.mp4`).
+- **Reliable Universal MP4 Video+Audio Multiplexing**:
+  - Auto-pairs DASH videos with corresponding audio tracks within a smart 30s affinity window.
+  - Live audio status badges (`🎵` / `🔇`) on grid thumbnails with dynamic `🎬` quick download buttons.
+  - Dedicated Audio filter mode in dropdown and clear remux progress feedback.
+  - Auto-remuxes multi-selected DASH videos with matching audio tracks during batch downloads with live progress bar and memory cleanup.
+- **Deep Network Layer & Live Sniffing Protection**:
+  - Preserves Meta CDN authorization signature tokens (`_nc_ohc`, `_nc_ht`, `_nc_cat`).
+  - Safe SPA navigation persistence without premature session memory wiping.
+
+---
+
+## [3.5.0] - 2026-08-27
+### Added & Perfected (Golden Master Edition)
+- **Universal Monolithic MP4 Multiplexer Engine**:
+  - Converts fragmented DASH streams (video + audio) into true standard Progressive Monolithic MP4 files.
+  - Guaranteed 100% video and synchronized audio playback on Windows Media Player (Windows Media Foundation), VLC, QuickTime, iOS, Android, and Smart TVs.
+- **Master Progressive MP4 Priority Pipeline**:
+  - Automatically identifies and downloads untouched 1080p Master MP4 files directly from Meta CDN when available.
+- **Ultra-Stable UI & Lightbox Suite**:
+  - Direct Native Lightbox Preview with `referrerpolicy="no-referrer"` preventing 403 / ORB black screen bugs.
+  - Direct Object Item Click Mapping and full-card clickability (`cursor: pointer`).
+  - Strict variable scope resolution (`allAvailableItems = items || []`) preventing runtime ReferenceErrors.
+
+---
+
 ## [3.2.1] - 2026-08-24
 ### Fixed
 - **ISO-BMFF Precise Chunk Offset (`stco`/`co64`) Calculation**:

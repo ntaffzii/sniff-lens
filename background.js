@@ -59,6 +59,22 @@ async function setupRefererRules() {
         initiatorDomains: [extId],
         resourceTypes: ["xmlhttprequest", "media", "image", "other"]
       }
+    },
+    {
+      id: 103,
+      priority: 1,
+      action: {
+        type: "modifyHeaders",
+        requestHeaders: [
+          { header: "Referer", operation: "set", value: "https://www.threads.com/" },
+          { header: "Origin", operation: "set", value: "https://www.threads.com" }
+        ]
+      },
+      condition: {
+        urlFilter: "*threads*",
+        initiatorDomains: [extId],
+        resourceTypes: ["xmlhttprequest", "media", "image", "other"]
+      }
     }
   ];
 
@@ -112,22 +128,28 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
 });
 
 // ============================================================================
+// ============================================================================
 // Helper: URL Normalization เพื่อสกัด Query Parameters ขยะ / Tracking / Cachebusters
 // ============================================================================
 function normalizeImageUrl(rawUrl) {
   try {
     const u = new URL(rawUrl);
-    // รายชื่อพารามิเตอร์ขยะที่มักทำให้รูปเดิมกลายเป็น URL ใหม่
+    const host = u.hostname.toLowerCase();
+    
+    // สำหรับ Facebook, Instagram, Threads, และ TikTok ห้ามตัด Signature / Auth tokens เด็ดขาด
+    if (host.includes("fbcdn.net") || host.includes("facebook.com") || host.includes("instagram.com") || host.includes("cdninstagram.com") || host.includes("threads.net") || host.includes("threads.com") || host.includes("tiktokcdn.com") || host.includes("tiktok.com")) {
+      return u.href;
+    }
+
     const trackingParams = [
       "utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content",
-      "fbclid", "gclid", "_ga", "_nc_cat", "_nc_sid", "_nc_ohc", "_nc_ht",
-      "token", "timestamp", "cachebust", "rand", "cb", "ts", "t", "v", "_"
+      "fbclid", "gclid", "_ga"
     ];
     
     const searchParams = new URLSearchParams(u.search);
     for (const key of Array.from(searchParams.keys())) {
       const lower = key.toLowerCase();
-      if (trackingParams.includes(lower) || lower.startsWith("utm_") || lower.startsWith("_nc_")) {
+      if (trackingParams.includes(lower) || lower.startsWith("utm_")) {
         searchParams.delete(key);
       }
     }
@@ -139,7 +161,60 @@ function normalizeImageUrl(rawUrl) {
   }
 }
 
+function extractMetaMediaId(url) {
+  try {
+    const match = url.match(/\/([0-9]{10,25})[_\.]/);
+    if (match) return match[1];
+    const u = new URL(url);
+    const fname = u.pathname.split("/").pop() || "";
+    const m = fname.match(/^([0-9a-zA-Z_-]+)\./);
+    if (m) return m[1];
+  } catch {}
+  return null;
+}
+
 // ============================================================================
+// Helper: ตรวจจับ Platform และ Domain แหล่งที่มาของสื่อ (Facebook, IG, TikTok, Web)
+// ============================================================================
+function detectPlatformAndDomain(url, initiator = "") {
+  const urlLower = (url || "").toLowerCase();
+  const initLower = (initiator || "").toLowerCase();
+
+  let platform = "web";
+  let domain = "web";
+
+  try {
+    const u = new URL(url);
+    domain = u.hostname.replace(/^www\./, "");
+  } catch {}
+
+  if (urlLower.includes("facebook.com") || urlLower.includes("fbcdn.net") || initLower.includes("facebook.com")) {
+    platform = "facebook";
+    domain = "facebook.com";
+  } else if (urlLower.includes("instagram.com") || urlLower.includes("cdninstagram.com") || initLower.includes("instagram.com")) {
+    platform = "instagram";
+    domain = "instagram.com";
+  } else if (urlLower.includes("tiktok.com") || urlLower.includes("byteoversea") || urlLower.includes("ibytedtos") || urlLower.includes("tiktokcdn") || initLower.includes("tiktok.com")) {
+    platform = "tiktok";
+    domain = "tiktok.com";
+  } else if (urlLower.includes("youtube.com") || urlLower.includes("googlevideo.com") || urlLower.includes("ytimg.com")) {
+    platform = "youtube";
+    domain = "youtube.com";
+  } else if (urlLower.includes("twitter.com") || urlLower.includes("x.com") || urlLower.includes("twimg.com") || initLower.includes("twitter.com") || initLower.includes("x.com")) {
+    platform = "x";
+    domain = "x.com";
+  } else if (urlLower.includes("threads.net") || urlLower.includes("threads.com") || initLower.includes("threads.net") || initLower.includes("threads.com")) {
+    platform = "threads";
+    domain = "threads.com";
+  } else if (urlLower.includes("shopee.co")) {
+    platform = "shopee";
+  } else if (urlLower.includes("lazada.co")) {
+    platform = "lazada";
+  }
+
+  return { platform, domain };
+}
+
 // ============================================================================
 // Helper: ตัด Byte-Range Parameters ออกจาก URL เพื่อแปลงเศษ Chunk ให้เป็น Full Video URL
 // ============================================================================
@@ -161,28 +236,36 @@ function stripVideoChunkParams(rawUrl) {
 }
 
 // ============================================================================
-// Helper: ตรวจสอบวิดีโอ MP4 / WebM แท้ และแยกแยะระหว่างไฟล์สตรีมมิ่งที่ไม่ใช่ MP4
+// Helper: ตรวจสอบวิดีโอ MP4 / WebM แท้ และแทร็กเสียง Audio
 // ============================================================================
 function isPlayableVideoRequest(rawUrl, contentType) {
   const urlLower = rawUrl.toLowerCase();
   const mimeLower = (contentType || "").toLowerCase();
 
-  // ปฏิเสธเฉพาะไฟล์สตรีมมิ่ง TS / DASH segments แท้ที่ต่อกันไม่ได้
   const nonMp4Streaming = [
-    ".mpd", ".m4s", ".ts", "video/mp2t", "application/dash+xml", "segment-", "seg-"
+    ".mpd", ".ts", "video/mp2t", "application/dash+xml"
   ];
   for (const ind of nonMp4Streaming) {
     if (urlLower.includes(ind) || mimeLower.includes(ind)) return false;
   }
 
   const isDirectMime = mimeLower.includes("video/mp4") || mimeLower.includes("video/webm") || mimeLower.includes("video/quicktime");
-  const isDirectExt = urlLower.includes(".mp4") || urlLower.includes(".webm");
+  const isDirectExt = urlLower.includes(".mp4") || urlLower.includes(".webm") || urlLower.includes("video");
 
   return isDirectMime || isDirectExt;
 }
 
+function isPlayableAudioRequest(rawUrl, contentType) {
+  const urlLower = rawUrl.toLowerCase();
+  const mimeLower = (contentType || "").toLowerCase();
+  if (mimeLower.startsWith("audio/") || mimeLower.includes("audio/mp4") || mimeLower.includes("audio/aac") || mimeLower.includes("audio/mpeg")) return true;
+  if (urlLower.includes(".mp3") || urlLower.includes(".aac") || urlLower.includes(".m4a")) return true;
+  if ((urlLower.includes("fbcdn.net") || urlLower.includes("cdninstagram.com")) && urlLower.includes("audio")) return true;
+  return false;
+}
+
 // ============================================================================
-// Network Sniffer: ดักจับรูปภาพและวิดีโอจาก HTTP Response จริง พร้อม Smart Deduplication
+// Network Sniffer: ดักจับรูปภาพ วิดีโอ และเสียงจาก HTTP Response จริง พร้อม Smart Deduplication
 // ============================================================================
 chrome.webRequest.onCompleted.addListener(
   (details) => {
@@ -190,7 +273,6 @@ chrome.webRequest.onCompleted.addListener(
     if (!isSniffingActive(details.tabId)) return;
     if (details.tabId < 0) return;
     if (details.url.startsWith("chrome-extension://") || details.url.startsWith("data:")) return;
-
 
     let contentLength = null;
     let contentType = null;
@@ -209,42 +291,54 @@ chrome.webRequest.onCompleted.addListener(
       }
     }
 
-    const isImage = details.type === "image" || (contentType && contentType.startsWith("image/"));
-    const isHlsStream = details.url.toLowerCase().includes(".m3u8") || (contentType && (contentType.includes("application/x-mpegurl") || contentType.includes("application/vnd.apple.mpegurl")));
-    const isDirectVideo = (details.type === "media" || (contentType && contentType.startsWith("video/")) || isPlayableVideoRequest(details.url, contentType));
+    const isAudio = isPlayableAudioRequest(details.url, contentType);
+    const isImage = !isAudio && (details.type === "image" || (contentType && contentType.startsWith("image/")));
+    const isHlsStream = !isAudio && (details.url.toLowerCase().includes(".m3u8") || (contentType && (contentType.includes("application/x-mpegurl") || contentType.includes("application/vnd.apple.mpegurl"))));
+    const isDirectVideo = !isAudio && (details.type === "media" || (contentType && contentType.startsWith("video/")) || isPlayableVideoRequest(details.url, contentType));
 
-    if (!isImage && !isHlsStream && !isDirectVideo) return;
+    if (!isImage && !isHlsStream && !isDirectVideo && !isAudio) return;
 
     // กรอง Tracking Pixels หรือ Spacer GIFs ขนาดจิ๋ว (< 30 bytes)
     if (isImage && contentLength !== null && contentLength > 0 && contentLength < 30) return;
 
-    // ถ้าเป็นวิดีโอ ให้แปลง URL จากเศษ Byte-Range ให้กลายเป็น Full Master Video URL
     let targetUrl = details.url;
     let resourceType = "image";
 
     if (isHlsStream) {
       resourceType = "hls_stream";
+    } else if (isAudio) {
+      resourceType = "media";
     } else if (isDirectVideo) {
       resourceType = "media";
       targetUrl = stripVideoChunkParams(details.url);
     }
 
     const normalizedUrl = normalizeImageUrl(targetUrl);
+    const mediaId = extractMetaMediaId(targetUrl);
+    const { platform, domain } = detectPlatformAndDomain(targetUrl, details.initiator);
+    const dashPlatforms = ["facebook", "instagram", "youtube", "threads"];
+    const isMaster = isDirectVideo && !dashPlatforms.includes(platform) && !targetUrl.includes("bytestart");
 
     // สร้าง Fingerprint จาก ETag หรือ Path
     let cleanPath = "";
     try { cleanPath = new URL(targetUrl).pathname; } catch {}
-    const fingerprint = etag ? `etag_${etag}` : (isDirectVideo ? `video_${cleanPath}` : (contentLength ? `fp_${cleanPath}_${contentLength}` : null));
+    const fingerprint = etag ? `etag_${etag}` : (isDirectVideo ? `video_${cleanPath}` : (isAudio ? `audio_${cleanPath}` : (contentLength ? `fp_${cleanPath}_${contentLength}` : null)));
 
     addCapturedItem(details.tabId, {
       id: "cap_" + Date.now() + "_" + Math.random().toString(36).slice(2, 7),
       url: targetUrl,
       normalizedUrl,
       etag,
+      mediaId,
+      platform,
+      domain,
+      initiator: details.initiator || "",
+      isAudio: isAudio,
+      isMaster: isMaster,
       fingerprint,
       resourceType: resourceType,
-      contentType: contentType || (isHlsStream ? "application/x-mpegURL" : (isDirectVideo ? "video/mp4" : "image/jpeg")),
-      size: isDirectVideo ? null : contentLength,
+      contentType: contentType || (isHlsStream ? "application/x-mpegURL" : (isAudio ? "audio/mp4" : (isDirectVideo ? "video/mp4" : "image/jpeg"))),
+      size: (isDirectVideo || isAudio) ? null : contentLength,
       statusCode: details.statusCode,
       timestamp: Date.now()
     });
@@ -536,11 +630,20 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     const tabId = sender.tab?.id || msg.tabId;
     if (tabId && tabId >= 0 && msg.url) {
       const normalizedUrl = normalizeImageUrl(msg.url);
+      const mediaId = extractMetaMediaId(msg.url);
+      const { platform, domain } = detectPlatformAndDomain(msg.url, sender.tab?.url || msg.pageUrl);
+
       addCapturedItem(tabId, {
         id: "cap_" + Date.now() + "_" + Math.random().toString(36).slice(2, 7),
         url: msg.url,
         normalizedUrl,
         etag: null,
+        mediaId,
+        platform: msg.platform || platform,
+        domain: msg.domain || domain,
+        sourcePageUrl: sender.tab?.url || msg.pageUrl || "",
+        isAudio: Boolean(msg.isAudio),
+        isMaster: msg.isMaster !== undefined ? msg.isMaster : true,
         fingerprint: `extracted_video_${normalizedUrl}`,
         resourceType: msg.resourceType || "media",
         contentType: msg.contentType || "video/mp4",
@@ -733,11 +836,10 @@ chrome.tabs.onRemoved.addListener((tabId) => {
 
 
 
-// เคลียร์รายการเมื่อผู้ใช้เปลี่ยนหน้าเว็บในแท็บเดิม (Main frame เท่านั้น)
-chrome.webNavigation.onCommitted.addListener((details) => {
-  if (details.frameId !== 0) return;
-  chrome.storage.session.remove("captured-" + details.tabId);
-});
+// จัดการเคลียร์ข้อมูลเฉพาะเมื่อแท็บถูกปิด (ไม่เคลียร์ตอนผู้ใช้เลื่อนดูโพสต์หรือคลิกเปลี่ยนหน้า SPA)
+// chrome.webNavigation.onCommitted.addListener((details) => {
+//   if (details.frameId !== 0) return;
+// });
 
 // ============================================================================
 // Helpers: จัดการและทำความสะอาด Path และชื่อไฟล์

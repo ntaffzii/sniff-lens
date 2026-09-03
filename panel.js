@@ -60,22 +60,36 @@ panelLiveBadge?.addEventListener("click", () => {
 
 /**
  * ค้นหา Audio Track ที่ตรงกับวิดีโอนี้เพื่อนำมารวมกัน (Smart Stream Matcher)
+ * จับคู่ด้วย Platform + Domain เดียวกันก่อน และกรองให้อยู่ภายใน Time Window 30 วินาที
  */
 function findMatchingAudioTrack(videoItem, allItems) {
   if (!allItems || !allItems.length) return null;
   const audioTracks = allItems.filter((it) => it.isAudio || it.contentType?.startsWith("audio/"));
   if (!audioTracks.length) return null;
 
+  // 1. กรอง Audio Tracks ที่มาจาก Platform และ Domain เดียวกันก่อนเพื่อความแม่นยำสูงสุด
+  const samePlatformAudios = audioTracks.filter((a) =>
+    (a.platform && videoItem.platform && a.platform === videoItem.platform) ||
+    (a.domain && videoItem.domain && a.domain === videoItem.domain)
+  );
+
+  const candidatePool = samePlatformAudios.length > 0 ? samePlatformAudios : audioTracks;
+
+  // 2. จับคู่ Audio Track ที่มี Timestamp ใกล้เคียงที่สุดภายใน 30 วินาที
   let closestAudio = null;
   let minTimeDiff = Infinity;
-  for (const a of audioTracks) {
+  const MAX_TIME_DIFF = 30000; // 30 วินาที
+
+  for (const a of candidatePool) {
     const diff = Math.abs((a.timestamp || 0) - (videoItem.timestamp || 0));
-    if (diff < minTimeDiff) {
+    if (diff < minTimeDiff && diff < MAX_TIME_DIFF) {
       minTimeDiff = diff;
       closestAudio = a;
     }
   }
-  return closestAudio;
+
+  // หากอยู่ใน Candidate Pool เดียวกันแล้วไม่เกินเวลา ให้ถือว่าเป็นคู่วิดีโอ+เสียง
+  return closestAudio || (samePlatformAudios.length === 1 ? samePlatformAudios[0] : null);
 }
 
 
@@ -232,8 +246,41 @@ function getOriginalBasename(url) {
 }
 
 // ============================================================================
-// Single Source of Truth for Sequential Filename Generation
+// Single Source of Truth for Sequential Filename Generation & Platform Tagging
 // ============================================================================
+function detectItemPlatform(item) {
+  if (item.platform && item.platform !== "web") {
+    if (item.platform === "twitter") return "x";
+    return item.platform;
+  }
+  const urlLower = (item.url || "").toLowerCase();
+  const domainLower = (item.domain || currentTabDomain || "").toLowerCase();
+  if (urlLower.includes("facebook.com") || urlLower.includes("fbcdn.net") || domainLower.includes("facebook")) return "facebook";
+  if (urlLower.includes("instagram.com") || urlLower.includes("cdninstagram.com") || domainLower.includes("instagram")) return "instagram";
+  if (urlLower.includes("tiktok.com") || urlLower.includes("byteoversea") || urlLower.includes("ibytedtos") || urlLower.includes("tiktokcdn") || domainLower.includes("tiktok")) return "tiktok";
+  if (urlLower.includes("youtube.com") || urlLower.includes("googlevideo") || urlLower.includes("ytimg") || domainLower.includes("youtube")) return "youtube";
+  if (urlLower.includes("twitter.com") || urlLower.includes("x.com") || urlLower.includes("twimg") || domainLower.includes("twitter") || domainLower.includes("x.com")) return "x";
+  if (urlLower.includes("threads.net") || urlLower.includes("threads.com") || domainLower.includes("threads")) return "threads";
+  if (urlLower.includes("shopee.co") || domainLower.includes("shopee")) return "shopee";
+  if (urlLower.includes("lazada.co") || domainLower.includes("lazada")) return "lazada";
+  return item.platform || "web";
+}
+
+function formatPlatformBadge(item) {
+  const p = detectItemPlatform(item);
+  if (p === "facebook") return { label: "🌐 Facebook", className: "platform-badge facebook" };
+  if (p === "instagram") return { label: "📸 Instagram", className: "platform-badge instagram" };
+  if (p === "tiktok") return { label: "🎵 TikTok", className: "platform-badge tiktok" };
+  if (p === "youtube") return { label: "🎬 YouTube", className: "platform-badge youtube" };
+  if (p === "x" || p === "twitter") return { label: "𝕏 X", className: "platform-badge x" };
+  if (p === "threads") return { label: "🧵 Threads", className: "platform-badge threads" };
+  if (p === "shopee") return { label: "🛍️ Shopee", className: "platform-badge shopee" };
+  if (p === "lazada") return { label: "📦 Lazada", className: "platform-badge lazada" };
+
+  const domain = item.domain || currentTabDomain || "web";
+  return { label: `🌐 ${domain}`, className: "platform-badge web" };
+}
+
 function generateFilename(item, index = 1, total = 1, customPattern = null, customPrefix = null, customStartNum = null) {
   const pattern = customPattern || userSettings.filenamePattern || "{prefix}_{num3}";
   const prefix = customPrefix != null ? customPrefix : (userSettings.prefix || "image");
@@ -244,6 +291,7 @@ function generateFilename(item, index = 1, total = 1, customPattern = null, cust
   const origName = getOriginalBasename(item.url);
   const dateStr = getTodayDateString();
   const domainStr = currentTabDomain || "web";
+  const platformStr = detectItemPlatform(item);
 
   // Zero-padded sequence numbers
   const numPad3 = String(actualNumber).padStart(3, "0");
@@ -251,6 +299,7 @@ function generateFilename(item, index = 1, total = 1, customPattern = null, cust
   const numRaw = String(actualNumber);
 
   let resultName = pattern
+    .replace(/\{platform\}/gi, platformStr)
     .replace(/\{prefix\}/gi, prefix)
     .replace(/\{num3\}/gi, numPad3)
     .replace(/\{num2\}/gi, numPad2)
@@ -293,7 +342,15 @@ function getFiltered() {
 
   return items.filter((item) => {
     if (filterType === "image" && item.resourceType !== "image") return false;
-    if (filterType === "media" && item.resourceType !== "media" && item.resourceType !== "hls_stream") return false;
+    if (filterType === "media") {
+      // แสดงเฉพาะวิดีโอ (ซ่อน isolated audio tracks ออกจากแท็บ Videos)
+      if (item.resourceType !== "media" && item.resourceType !== "hls_stream") return false;
+      if (item.isAudio) return false;
+    }
+    if (filterType === "audio") {
+      // แสดงเฉพาะ audio tracks
+      if (!item.isAudio && !item.contentType?.startsWith("audio/")) return false;
+    }
     if (minSize > 0 && (!item.size || item.size < minSize)) return false;
     if (searchTerm && !item.url.toLowerCase().includes(searchTerm)) return false;
     return true;
@@ -324,6 +381,11 @@ function render() {
     const card = document.createElement("div");
     const isChecked = selectedUrls.has(item.url);
     card.className = "item-card" + (isChecked ? " is-selected" : "");
+    card.style.cursor = "pointer";
+    card.onclick = (e) => {
+      if (e.target.closest(".checkbox-overlay") || e.target.closest(".quick-download-btn")) return;
+      openLightbox(index, item);
+    };
 
     // Checkbox overlay
     const cbBox = document.createElement("div");
@@ -338,10 +400,13 @@ function render() {
     cbBox.appendChild(cb);
 
     // Quick download button
+    const isVideoItem = item.resourceType === "media" && !item.isAudio;
+    const hasAudioTrack = isVideoItem && (item.isMaster || Boolean(findMatchingAudioTrack(item, items || [])));
+
     const quickDl = document.createElement("button");
     quickDl.className = "quick-download-btn";
-    quickDl.innerHTML = "💾";
-    quickDl.title = "Download this image";
+    quickDl.innerHTML = isVideoItem ? (hasAudioTrack ? "🎬" : "💾") : "💾";
+    quickDl.title = isVideoItem ? (hasAudioTrack ? "Download 1080p Video + Audio" : "Download Video") : "Download this image";
     quickDl.onclick = (e) => {
       e.stopPropagation();
       downloadSingleItem(item, index + 1);
@@ -350,12 +415,15 @@ function render() {
     // Thumbnail Container
     const thumbContainer = document.createElement("div");
     thumbContainer.className = "thumb-container";
-    thumbContainer.onclick = () => openLightbox(index);
+    thumbContainer.onclick = (e) => {
+      e.stopPropagation();
+      openLightbox(index, item);
+    };
 
     // Dimensions badge
     const dimBadge = document.createElement("span");
     dimBadge.className = "dim-badge";
-    dimBadge.textContent = item.width && item.height ? `${item.width}×${item.height}` : "...";
+    dimBadge.textContent = item.width && item.height ? `${item.width}×${item.height}${isVideoItem ? (hasAudioTrack ? " 🎵" : " 🔇") : ""}` : "...";
 
     if (item.resourceType === "hls_stream") {
       const streamCard = document.createElement("div");
@@ -376,6 +444,7 @@ function render() {
       const videoEl = document.createElement("video");
       videoEl.className = "thumb-img";
       videoEl.src = item.url;
+      videoEl.referrerPolicy = "no-referrer";
       videoEl.muted = true;
       videoEl.preload = "metadata";
       videoEl.playsInline = true;
@@ -384,7 +453,8 @@ function render() {
           item.width = videoEl.videoWidth;
           item.height = videoEl.videoHeight;
           item.isAudio = false;
-          dimBadge.textContent = `${videoEl.videoWidth}×${videoEl.videoHeight}`;
+          const audioOk = item.isMaster || Boolean(findMatchingAudioTrack(item, items || []));
+          dimBadge.textContent = `${videoEl.videoWidth}×${videoEl.videoHeight} ${audioOk ? "🎵" : "🔇"}`;
         } else {
           item.isAudio = true;
           dimBadge.textContent = "Audio 🎵";
@@ -415,6 +485,7 @@ function render() {
       const img = document.createElement("img");
       img.className = "thumb-img";
       img.src = item.url;
+      img.referrerPolicy = "no-referrer";
       img.loading = "lazy";
       img.alt = generateFilename(item, index + 1, filtered.length);
 
@@ -437,7 +508,15 @@ function render() {
     typeBadge.className = "media-badge";
     typeBadge.textContent = formatBadgeText(item);
 
+    // Platform badge
+    const platInfo = formatPlatformBadge(item);
+    const platformBadge = document.createElement("span");
+    platformBadge.className = platInfo.className;
+    platformBadge.textContent = platInfo.label;
+    platformBadge.title = `Source: ${platInfo.label}`;
+
     thumbContainer.appendChild(typeBadge);
+    thumbContainer.appendChild(platformBadge);
     thumbContainer.appendChild(dimBadge);
 
     // Footer Info
@@ -583,47 +662,58 @@ async function downloadSingleItem(item, index = 1, customFilename = null, forceA
   const fullPath = subfolder + filename;
 
   const isVideo = item.resourceType === "media" && !item.isAudio;
-  const matchingAudio = isVideo && forceAudioMerge ? findMatchingAudioTrack(item, items) : null;
+  const allItems = items || [];
 
-  // หากวิดีโอนี้มีแทร็กเสียงแยกต่างหาก (Instagram/Reels DASH) ให้รวมไฟล์ทันทีในเบราว์เซอร์ (O(N) Fast Remuxer)
+  // ตรวจสอบหา Audio Track ที่จับคู่ได้
+  const matchingAudio = (isVideo && forceAudioMerge)
+    ? findMatchingAudioTrack(item, allItems)
+    : null;
+
+  // หากวิดีโอนี้มี Audio Track ที่จับคู่ได้ ให้รวมไฟล์ด้วย Universal Monolithic Remuxer (O(N))
   if (isVideo && matchingAudio && typeof remuxVideoAndAudio === "function") {
-    showToast(`⚡ Remuxing 1080p Video + Audio Track (${filename})...`);
+    showToast(`⬇️ Fetching video & audio tracks (${filename})...`);
     try {
       const [vRes, aRes] = await Promise.all([
         fetch(item.url),
         fetch(matchingAudio.url)
       ]);
 
-      if (vRes.ok && aRes.ok) {
-        const [vBuf, aBuf] = await Promise.all([
-          vRes.arrayBuffer(),
-          aRes.arrayBuffer()
-        ]);
-
-        const mergedBlob = await remuxVideoAndAudio(vBuf, aBuf);
-        const blobUrl = URL.createObjectURL(mergedBlob);
-
-        chrome.downloads.download({
-          url: blobUrl,
-          filename: fullPath,
-          saveAs: Boolean(userSettings.saveAsPrompt)
-        }, (downloadId) => {
-          if (chrome.runtime.lastError || !downloadId) {
-            const a = document.createElement("a");
-            a.href = blobUrl;
-            a.download = filename;
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-          }
-          setTimeout(() => URL.revokeObjectURL(blobUrl), 30000);
-        });
-
-        showToast(`✅ Downloaded Merged Video+Audio: ${filename}`);
-        return;
+      if (!vRes.ok || !aRes.ok) {
+        if (vRes.status === 403 || aRes.status === 403) {
+          showToast("⚠️ URL Token expired. Please refresh the page and retry.", 4500);
+        }
+        throw new Error(`HTTP ${vRes.status || aRes.status}`);
       }
+
+      showToast(`⚡ Multiplexing 1080p Video + Audio (${filename})...`);
+      const [vBuf, aBuf] = await Promise.all([
+        vRes.arrayBuffer(),
+        aRes.arrayBuffer()
+      ]);
+
+      const mergedBlob = await remuxVideoAndAudio(vBuf, aBuf);
+      const blobUrl = URL.createObjectURL(mergedBlob);
+
+      chrome.downloads.download({
+        url: blobUrl,
+        filename: fullPath,
+        saveAs: Boolean(userSettings.saveAsPrompt)
+      }, (downloadId) => {
+        if (chrome.runtime.lastError || !downloadId) {
+          const a = document.createElement("a");
+          a.href = blobUrl;
+          a.download = filename;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+        }
+        setTimeout(() => URL.revokeObjectURL(blobUrl), 30000);
+      });
+
+      showToast(`✅ Downloaded Merged Video+Audio: ${filename}`);
+      return;
     } catch (err) {
-      console.warn("[Remuxer] Fast remux failed, falling back to direct video:", err);
+      console.warn("[Remuxer] Remux failed, falling back to direct stream:", err);
     }
   }
 
@@ -631,7 +721,11 @@ async function downloadSingleItem(item, index = 1, customFilename = null, forceA
 
   // Step 1: Direct In-Memory Blob Fetch in Panel context (Bypasses TikTok/Facebook Hotlink 403)
   try {
-    const res = await fetch(item.url);
+    const targetDownloadUrl = item.url;
+    const res = await fetch(targetDownloadUrl);
+    if (!res.ok && res.status === 403) {
+      showToast("⚠️ URL Token expired. Please refresh the page and retry.", 4500);
+    }
     if (res.ok) {
       const blob = await res.blob();
       const finalBlob = (filename.endsWith(".mp4") && blob.type.includes("html"))
@@ -689,9 +783,18 @@ const lightboxSize = document.getElementById("lightbox-size");
 const lightboxMime = document.getElementById("lightbox-mime");
 const lightboxIndexBadge = document.getElementById("lightbox-index-badge");
 
-function openLightbox(index) {
-  if (index < 0 || index >= filteredItemsCache.length) return;
-  currentLightboxIndex = index;
+function openLightbox(index, directItem = null) {
+  const currentList = getFiltered();
+  filteredItemsCache = currentList;
+  if (directItem) {
+    const foundIdx = currentList.findIndex((it) => it.url === directItem.url);
+    currentLightboxIndex = foundIdx !== -1 ? foundIdx : index;
+  } else {
+    currentLightboxIndex = Math.max(0, Math.min(index, currentList.length - 1));
+  }
+
+  if (currentLightboxIndex < 0 || currentLightboxIndex >= filteredItemsCache.length) return;
+
   updateLightboxContent();
   if (modal) {
     modal.classList.add("active");
@@ -707,10 +810,16 @@ function closeLightbox() {
     const wrapper = document.querySelector(".lightbox-img-wrapper");
     if (wrapper) {
       const vid = wrapper.querySelector("video");
+      const aud = wrapper.querySelector("audio");
       if (vid) {
         vid.pause();
         vid.src = "";
       }
+      if (aud) {
+        aud.pause();
+        aud.src = "";
+      }
+      wrapper.innerHTML = "";
     }
   }
 }
@@ -761,17 +870,22 @@ function updateLightboxContent() {
         <audio id="lightbox-audio" controls autoplay src="${item.url}" style="width: 280px;"></audio>
       `;
       wrapper.appendChild(audioWrapper);
+      const audEl = audioWrapper.querySelector("audio");
+      if (audEl) audEl.referrerPolicy = "no-referrer";
       if (lightboxDim) lightboxDim.textContent = "Audio Stream";
     } else if (item.resourceType === "media") {
       const vid = document.createElement("video");
       vid.id = "lightbox-video";
       vid.src = item.url;
+      vid.referrerPolicy = "no-referrer";
       vid.controls = true;
       vid.autoplay = true;
-      vid.muted = true;
+      vid.muted = false;
       vid.style.maxWidth = "100%";
-      vid.style.maxHeight = "100%";
+      vid.style.maxHeight = "calc(100vh - 220px)";
       vid.style.borderRadius = "6px";
+      vid.style.objectFit = "contain";
+      vid.setAttribute("playsinline", "");
       vid.onloadedmetadata = () => {
         if (vid.videoWidth && vid.videoHeight) {
           item.width = vid.videoWidth;
@@ -784,6 +898,7 @@ function updateLightboxContent() {
       const img = document.createElement("img");
       img.id = "lightbox-img";
       img.src = item.url;
+      img.referrerPolicy = "no-referrer";
       img.alt = "Full preview";
       img.onload = () => {
         if (img.naturalWidth && img.naturalHeight) {
@@ -806,9 +921,10 @@ function updateLightboxContent() {
       dlBtn.textContent = "💾 Download Audio Track";
       if (rawDlBtn) rawDlBtn.style.display = "none";
     } else if (item.resourceType === "media") {
-      const hasAudio = Boolean(findMatchingAudioTrack(item, items));
-      if (hasAudio) {
-        dlBtn.textContent = "⚡ Download Merged Video + Audio (1080p)";
+      const allItems = items || [];
+      const hasAudio = Boolean(findMatchingAudioTrack(item, allItems));
+      if (hasAudio || item.isMaster) {
+        dlBtn.textContent = "⚡ Download 1080p Video + Audio";
         if (rawDlBtn) {
           rawDlBtn.style.display = "inline-flex";
           rawDlBtn.textContent = "🎬 Video Only (Muted)";
@@ -823,12 +939,15 @@ function updateLightboxContent() {
     }
   }
 
-
-
-
   if (lightboxSize) lightboxSize.textContent = humanSize(item.size);
   if (lightboxMime) lightboxMime.textContent = item.contentType || "image/jpeg";
   if (lightboxIndexBadge) lightboxIndexBadge.textContent = `${currentLightboxIndex + 1} / ${filteredItemsCache.length}`;
+
+  const lbPlatform = document.getElementById("lightbox-platform");
+  if (lbPlatform) {
+    const platInfo = formatPlatformBadge(item);
+    lbPlatform.textContent = platInfo.label;
+  }
 
   if (lightboxDim && item.resourceType !== "hls_stream") {
     lightboxDim.textContent = (item.width && item.height)
@@ -836,7 +955,6 @@ function updateLightboxContent() {
       : "Reading dimensions...";
   }
 }
-
 
 function updateLightboxPathPreview(filename) {
   if (!lightboxPathPreview) return;
@@ -866,7 +984,7 @@ document.getElementById("lightbox-prev")?.addEventListener("click", (e) => { e.s
 
 if (modal) {
   modal.onclick = (e) => {
-    if (e.target === modal || e.target.classList.contains("lightbox-body") || e.target.classList.contains("lightbox-img-wrapper")) {
+    if (e.target === modal || e.target.id === "lightbox-modal") {
       closeLightbox();
     }
   };
@@ -992,6 +1110,10 @@ document.getElementById("preset-folder-default")?.addEventListener("click", () =
   updateSettingsLivePreview();
 });
 
+document.getElementById("preset-name-platform")?.addEventListener("click", () => {
+  if (patternInput) patternInput.value = "[{platform}]_{orig}";
+  updateSettingsLivePreview();
+});
 document.getElementById("preset-name-seq")?.addEventListener("click", () => {
   if (patternInput) patternInput.value = "{prefix}_{num3}";
   updateSettingsLivePreview();
@@ -1083,24 +1205,47 @@ function closeConfirmModal() {
 document.getElementById("confirm-close-btn")?.addEventListener("click", closeConfirmModal);
 document.getElementById("confirm-cancel-btn")?.addEventListener("click", closeConfirmModal);
 
-// Proceed Batch Download Button
-document.getElementById("confirm-proceed-btn")?.addEventListener("click", () => {
+// Proceed Batch Download Button (With Auto-Remuxing Support for Video+Audio)
+document.getElementById("confirm-proceed-btn")?.addEventListener("click", async () => {
   if (!pendingBatchItems.length) return;
   const toDownload = pendingBatchItems;
   closeConfirmModal();
 
-  chrome.runtime.sendMessage({
-    type: "DOWNLOAD_BATCH",
-    items: toDownload,
-    folder: userSettings.subfolder || "captured",
-    saveAs: Boolean(userSettings.saveAsPrompt)
-  }, (res) => {
-    if (res?.status === "started") {
-      showBatchProgressBar(res.count);
-    }
-  });
-
+  showBatchProgressBar(toDownload.length);
   showToast(`⚡ Starting batch download of ${toDownload.length} files...`);
+
+  const allItems = items || [];
+  const needsClientRemux = toDownload.some((it) => it.resourceType === "media" && !it.isAudio && findMatchingAudioTrack(it, allItems));
+
+  if (needsClientRemux) {
+    let completed = 0;
+    for (let i = 0; i < toDownload.length; i++) {
+      const itm = toDownload[i];
+      const filename = itm.targetFilename || generateFilename(itm, i + 1, toDownload.length);
+      if (progressFilename) progressFilename.textContent = filename;
+      try {
+        await downloadSingleItem(itm, i + 1, filename);
+      } catch (err) {
+        console.warn("[Batch Remux] Failed item:", filename, err);
+      }
+      completed++;
+      if (progressCurrent) progressCurrent.textContent = completed;
+      await new Promise((r) => setTimeout(r, 250));
+    }
+    setTimeout(hideBatchProgressBar, 2500);
+    showToast(`✅ Finished batch download of ${toDownload.length} files`);
+  } else {
+    chrome.runtime.sendMessage({
+      type: "DOWNLOAD_BATCH",
+      items: toDownload,
+      folder: userSettings.subfolder || "captured",
+      saveAs: Boolean(userSettings.saveAsPrompt)
+    }, (res) => {
+      if (res?.status === "started") {
+        currentBatchId = res.batchId;
+      }
+    });
+  }
 });
 
 // ============================================================================

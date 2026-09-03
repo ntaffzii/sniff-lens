@@ -262,7 +262,15 @@ const extractedVideoUrls = new Set();
 
 function cleanMediaUrl(raw) {
   if (!raw || typeof raw !== "string") return null;
-  let url = raw.replace(/\\\//g, "/").replace(/\\u0026/g, "&").replace(/&amp;/g, "&").trim();
+  let url = raw
+    .replace(/\\\//g, "/")
+    .replace(/\\u0026/g, "&")
+    .replace(/&amp;/g, "&")
+    .replace(/\\u003D/g, "=")
+    .replace(/\\u003d/g, "=")
+    .replace(/\\u0025/g, "%")
+    .trim();
+
   // ตัด byte range parameters เพื่อให้ได้ URL ของไฟล์ตัวเต็ม
   try {
     const u = new URL(url);
@@ -288,7 +296,7 @@ function scanAndExtractPageVideos() {
   for (const sel of metaSelectors) {
     const el = document.querySelector(sel);
     const content = el?.getAttribute("content");
-    if (content && content.startsWith("http") && (content.includes(".mp4") || content.includes(".webm"))) {
+    if (content && content.startsWith("http") && (content.includes(".mp4") || content.includes(".webm") || content.includes("video"))) {
       const cleaned = cleanMediaUrl(content);
       if (cleaned) foundUrls.add(cleaned);
     }
@@ -299,7 +307,7 @@ function scanAndExtractPageVideos() {
   videoElements.forEach((el) => {
     const src = el.src || el.getAttribute("src");
     if (src && src.startsWith("http") && !src.startsWith("blob:") && !src.startsWith("data:")) {
-      if (src.includes(".mp4") || src.includes(".webm")) {
+      if (src.includes(".mp4") || src.includes(".webm") || src.includes("video") || src.includes("fbcdn.net") || src.includes("cdninstagram.com")) {
         const cleaned = cleanMediaUrl(src);
         if (cleaned) foundUrls.add(cleaned);
       }
@@ -370,6 +378,13 @@ function scanAndExtractPageVideos() {
   }
 
   // 5. ส่ง URL ที่พบไปยัง background.js (O(1) lookups)
+  const isFb = window.location.hostname.includes("facebook.com");
+  const isIg = window.location.hostname.includes("instagram.com");
+  const isTt = window.location.hostname.includes("tiktok.com");
+  const isX = window.location.hostname.includes("x.com") || window.location.hostname.includes("twitter.com");
+  const isThreads = window.location.hostname.includes("threads.net") || window.location.hostname.includes("threads.com");
+  const currentPlatform = isIg ? "instagram" : (isTt ? "tiktok" : (isX ? "x" : (isThreads ? "threads" : (isFb ? "facebook" : "web"))));
+
   foundUrls.forEach((url) => {
     if (!extractedVideoUrls.has(url)) {
       extractedVideoUrls.add(url);
@@ -377,11 +392,12 @@ function scanAndExtractPageVideos() {
         type: "ADD_PAGE_EXTRACTED_MEDIA",
         url: url,
         resourceType: "media",
+        isMaster: true,
+        platform: currentPlatform,
         contentType: "video/mp4"
       }).catch(() => {});
     }
   });
-
 }
 
 // สแกนเมื่อโหลดหน้าเว็บ, เลื่อนหน้าจอ, หรือ DOM เปลี่ยนแปลง (Debounced O(1))
@@ -391,6 +407,8 @@ function debouncedScanVideos() {
   scanTimer = setTimeout(scanAndExtractPageVideos, 400);
 }
 
+// เรียกสแกนทันทีที่ Inject และเมื่อโหลด/เลื่อนหน้าจอ
+debouncedScanVideos();
 window.addEventListener("load", debouncedScanVideos);
 window.addEventListener("scroll", debouncedScanVideos, { passive: true });
 document.addEventListener("DOMContentLoaded", debouncedScanVideos);
