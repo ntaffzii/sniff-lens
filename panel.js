@@ -1380,6 +1380,46 @@ const KEY_LABELS = {
   Enter: "↵ Enter"
 };
 
+// Hold Key (กดค้าง) helpers
+const MACRO_HOLD_MIN_MS = 100;
+const MACRO_HOLD_MAX_MS = 60000;
+const MACRO_HOLD_MIN_GAP_MS = 100;
+const MACRO_TAP_MIN_GAP_MS = 300;
+let macroCountdownTimer = null;
+
+// block เก่าที่ไม่มี mode/holdMs จะกลายเป็น Tap เหมือนเดิม
+function normalizeMacroBlock(block) {
+  const b = { ...(block || {}) };
+  if (!KEY_LABELS[b.key]) b.key = "ArrowRight";
+  b.mode = b.mode === "hold" ? "hold" : "tap";
+  b.holdMs = b.mode === "hold"
+    ? Math.min(MACRO_HOLD_MAX_MS, Math.max(MACRO_HOLD_MIN_MS, Number(b.holdMs) || 1000))
+    : 0;
+  b.repeat = b.repeat !== false;
+  b.delayMs = Number(b.delayMs) || 1500;
+  return b;
+}
+
+function getBlockGapMs(block) {
+  const minGap = block.mode === "hold" ? MACRO_HOLD_MIN_GAP_MS : MACRO_TAP_MIN_GAP_MS;
+  return Math.max(minGap, block.delayMs || 1500);
+}
+
+function getBlockCycleMs(block) {
+  return (block.mode === "hold" ? block.holdMs : 0) + getBlockGapMs(block);
+}
+
+function formatSec(ms) {
+  return (ms / 1000).toFixed(1) + "s";
+}
+
+function updateMacroCycleLabel() {
+  const el = document.getElementById("macro-cycle-label");
+  if (!el) return;
+  const total = currentMacroBlocks.reduce((sum, b) => sum + getBlockCycleMs(b), 0);
+  el.textContent = `Cycle: ${formatSec(total)}`;
+}
+
 // อัปเดตสีปุ่มทิศทางด่วน
 function updateDirButtonsUI(activeDir) {
   Object.keys(dirButtons).forEach((dir) => {
@@ -1421,9 +1461,12 @@ function updateMacroBadge() {
   if (!macroStepBadge) return;
   const count = currentMacroBlocks.length;
   if (count === 1) {
-    const key = currentMacroBlocks[0].key;
+    const block = currentMacroBlocks[0];
+    const key = block.key;
     const icon = key === "ArrowDown" ? "⬇️" : (key === "ArrowLeft" ? "⬅️" : (key === "ArrowUp" ? "⬆️" : "➡️"));
-    macroStepBadge.textContent = `1 Step (${icon})`;
+    macroStepBadge.textContent = block.mode === "hold"
+      ? `1 Step (${icon} hold ${formatSec(block.holdMs)})`
+      : `1 Step (${icon})`;
   } else {
     macroStepBadge.textContent = `${count} Steps Chain`;
   }
@@ -1432,40 +1475,85 @@ function updateMacroBadge() {
 // ============================================================================
 // Macro Studio Modal Builder & Renderer
 // ============================================================================
+function makeMacroSecInput(valueMs, minSec, maxSec, onValue) {
+  const input = document.createElement("input");
+  input.type = "number";
+  input.className = "form-input";
+  input.style.width = "52px";
+  input.style.padding = "3px 4px";
+  input.style.fontSize = "10px";
+  input.min = String(minSec);
+  input.max = String(maxSec);
+  input.step = "0.1";
+  input.value = (valueMs / 1000).toFixed(1);
+
+  input.addEventListener("input", () => {
+    const sec = parseFloat(input.value);
+    if (Number.isFinite(sec) && sec >= minSec) {
+      onValue(Math.round(Math.min(sec, maxSec) * 1000));
+    }
+  });
+  input.addEventListener("change", () => {
+    let sec = parseFloat(input.value);
+    if (!Number.isFinite(sec)) sec = minSec;
+    sec = Math.min(maxSec, Math.max(minSec, sec));
+    input.value = sec.toFixed(1);
+    onValue(Math.round(sec * 1000));
+  });
+  return input;
+}
+
+function makeMacroInlineLabel(text) {
+  const span = document.createElement("span");
+  span.style.fontSize = "9.5px";
+  span.style.color = "#71717a";
+  span.style.whiteSpace = "nowrap";
+  span.textContent = text;
+  return span;
+}
+
 function renderMacroBlocksInModal() {
   if (!macroBlocksList) return;
   macroBlocksList.innerHTML = "";
+  currentMacroBlocks = currentMacroBlocks.map(normalizeMacroBlock);
 
   if (macroBlocksCountLabel) {
     macroBlocksCountLabel.textContent = `${currentMacroBlocks.length} Block${currentMacroBlocks.length > 1 ? "s" : ""}`;
   }
+  updateMacroCycleLabel();
 
   currentMacroBlocks.forEach((block, idx) => {
+    const isHold = block.mode === "hold";
+
     const row = document.createElement("div");
     row.style.display = "flex";
-    row.style.alignItems = "center";
+    row.style.flexDirection = "column";
     row.style.gap = "6px";
     row.style.background = "#141417";
-    row.style.border = "1px solid #27272a";
+    row.style.border = isHold ? "1px solid #92400e" : "1px solid #27272a";
     row.style.borderRadius = "6px";
     row.style.padding = "6px 8px";
 
-    // Step Number Badge
+    // ---------- Line 1: Step badge | Key | Tap/Hold toggle | Delete ----------
+    const top = document.createElement("div");
+    top.style.display = "flex";
+    top.style.alignItems = "center";
+    top.style.gap = "6px";
+
     const numBadge = document.createElement("span");
     numBadge.style.fontSize = "10px";
     numBadge.style.fontWeight = "700";
     numBadge.style.color = "#a5b4fc";
     numBadge.style.minWidth = "42px";
     numBadge.textContent = `Step ${idx + 1}`;
-    row.appendChild(numBadge);
+    top.appendChild(numBadge);
 
-    // Key Dropdown
     const keySelect = document.createElement("select");
     keySelect.className = "form-input";
-    keySelect.style.flex = "1.6";
+    keySelect.style.flex = "1";
+    keySelect.style.minWidth = "0";
     keySelect.style.padding = "3px 5px";
     keySelect.style.fontSize = "10px";
-
     Object.keys(KEY_LABELS).forEach((k) => {
       const opt = document.createElement("option");
       opt.value = k;
@@ -1473,44 +1561,40 @@ function renderMacroBlocksInModal() {
       if (block.key === k) opt.selected = true;
       keySelect.appendChild(opt);
     });
-
     keySelect.addEventListener("change", () => {
       block.key = keySelect.value;
     });
-    row.appendChild(keySelect);
+    top.appendChild(keySelect);
 
-    // Delay Input (Seconds)
-    const delayContainer = document.createElement("div");
-    delayContainer.style.display = "flex";
-    delayContainer.style.alignItems = "center";
-    delayContainer.style.gap = "3px";
-    delayContainer.style.flex = "1";
-
-    const delayInput = document.createElement("input");
-    delayInput.type = "number";
-    delayInput.className = "form-input";
-    delayInput.style.width = "46px";
-    delayInput.style.padding = "3px 4px";
-    delayInput.style.fontSize = "10px";
-    delayInput.min = "0.3";
-    delayInput.step = "0.1";
-    delayInput.value = (block.delayMs / 1000).toFixed(1);
-
-    delayInput.addEventListener("input", () => {
-      const sec = parseFloat(delayInput.value) || 1.5;
-      block.delayMs = Math.round(sec * 1000);
+    // Tap | Hold segmented toggle
+    const modeToggle = document.createElement("div");
+    modeToggle.style.display = "flex";
+    modeToggle.style.border = "1px solid #3f3f46";
+    modeToggle.style.borderRadius = "5px";
+    modeToggle.style.overflow = "hidden";
+    ["tap", "hold"].forEach((mode) => {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.textContent = mode === "tap" ? "Tap" : "Hold";
+      btn.title = mode === "tap" ? "Press and release immediately" : "Hold the key down for a set duration";
+      btn.style.border = "none";
+      btn.style.padding = "3px 8px";
+      btn.style.fontSize = "10px";
+      btn.style.fontWeight = "700";
+      btn.style.cursor = "pointer";
+      const active = block.mode === mode;
+      btn.style.background = active ? (mode === "hold" ? "#d97706" : "#4f46e5") : "transparent";
+      btn.style.color = active ? "#fff" : "#a1a1aa";
+      btn.addEventListener("click", () => {
+        if (block.mode === mode) return;
+        block.mode = mode;
+        block.holdMs = mode === "hold" ? 5000 : 0;
+        renderMacroBlocksInModal();
+      });
+      modeToggle.appendChild(btn);
     });
+    top.appendChild(modeToggle);
 
-    const secLabel = document.createElement("span");
-    secLabel.style.fontSize = "9.5px";
-    secLabel.style.color = "#71717a";
-    secLabel.textContent = "sec";
-
-    delayContainer.appendChild(delayInput);
-    delayContainer.appendChild(secLabel);
-    row.appendChild(delayContainer);
-
-    // Delete Button
     if (currentMacroBlocks.length > 1) {
       const delBtn = document.createElement("button");
       delBtn.textContent = "🗑️";
@@ -1523,7 +1607,132 @@ function renderMacroBlocksInModal() {
         currentMacroBlocks.splice(idx, 1);
         renderMacroBlocksInModal();
       });
-      row.appendChild(delBtn);
+      top.appendChild(delBtn);
+    }
+    row.appendChild(top);
+
+    // ---------- Line 2: [hold] [wait] [repeat] [Test] ----------
+    const controls = document.createElement("div");
+    controls.style.display = "flex";
+    controls.style.alignItems = "center";
+    controls.style.flexWrap = "wrap";
+    controls.style.gap = "6px";
+    controls.style.paddingLeft = "48px";
+
+    let refreshBar = () => {};
+
+    if (isHold) {
+      controls.appendChild(makeMacroInlineLabel("กดค้าง"));
+      controls.appendChild(makeMacroSecInput(
+        block.holdMs, MACRO_HOLD_MIN_MS / 1000, MACRO_HOLD_MAX_MS / 1000,
+        (ms) => { block.holdMs = ms; refreshBar(); updateMacroCycleLabel(); }
+      ));
+      controls.appendChild(makeMacroInlineLabel("sec →"));
+    }
+
+    controls.appendChild(makeMacroInlineLabel(isHold ? "แล้วรอ" : "รอ"));
+    controls.appendChild(makeMacroSecInput(
+      block.delayMs, (isHold ? MACRO_HOLD_MIN_GAP_MS : MACRO_TAP_MIN_GAP_MS) / 1000, 3600,
+      (ms) => { block.delayMs = ms; refreshBar(); updateMacroCycleLabel(); }
+    ));
+    controls.appendChild(makeMacroInlineLabel("sec"));
+
+    if (isHold) {
+      const repLabel = document.createElement("label");
+      repLabel.style.display = "flex";
+      repLabel.style.alignItems = "center";
+      repLabel.style.gap = "3px";
+      repLabel.style.fontSize = "9.5px";
+      repLabel.style.color = "#a1a1aa";
+      repLabel.style.cursor = "pointer";
+      repLabel.title = "Simulate keyboard auto-repeat (sends repeated keydown while held)";
+      const repCb = document.createElement("input");
+      repCb.type = "checkbox";
+      repCb.checked = block.repeat !== false;
+      repCb.addEventListener("change", () => {
+        block.repeat = repCb.checked;
+      });
+      repLabel.appendChild(repCb);
+      repLabel.appendChild(document.createTextNode("🔁 repeat"));
+      controls.appendChild(repLabel);
+    }
+
+    const testBtn = document.createElement("button");
+    testBtn.type = "button";
+    testBtn.textContent = "▶ Test";
+    testBtn.title = isHold ? `Hold ${block.key} once for ${formatSec(block.holdMs)}` : `Press ${block.key} once`;
+    testBtn.style.marginLeft = "auto";
+    testBtn.style.background = "rgba(99, 102, 241, 0.2)";
+    testBtn.style.border = "1px solid #6366f1";
+    testBtn.style.color = "#c7d2fe";
+    testBtn.style.borderRadius = "4px";
+    testBtn.style.padding = "2px 8px";
+    testBtn.style.fontSize = "10px";
+    testBtn.style.cursor = "pointer";
+    testBtn.addEventListener("click", () => {
+      if (!currentTabId) {
+        showToast("⚠️ No active tab to test on");
+        return;
+      }
+      testBtn.disabled = true;
+      testBtn.textContent = isHold ? "⏳ Holding…" : "…";
+      chrome.runtime.sendMessage({
+        type: "STEP_MACRO_SINGLE",
+        tabId: currentTabId,
+        key: block.key,
+        holdMs: isHold ? block.holdMs : 0,
+        repeat: block.repeat !== false
+      }, (res) => {
+        testBtn.disabled = false;
+        testBtn.textContent = "▶ Test";
+        if (chrome.runtime.lastError || res?.status !== "ok") {
+          showToast("⚠️ Test failed (could not attach debugger to this tab)");
+        }
+      });
+    });
+    controls.appendChild(testBtn);
+    row.appendChild(controls);
+
+    // ---------- Line 3: timeline bar (Hold only) ----------
+    if (isHold) {
+      const timeline = document.createElement("div");
+      timeline.style.display = "flex";
+      timeline.style.alignItems = "center";
+      timeline.style.gap = "6px";
+      timeline.style.paddingLeft = "48px";
+
+      const bar = document.createElement("div");
+      bar.style.flex = "1";
+      bar.style.height = "5px";
+      bar.style.display = "flex";
+      bar.style.background = "#27272a";
+      bar.style.borderRadius = "3px";
+      bar.style.overflow = "hidden";
+      const holdSeg = document.createElement("div");
+      holdSeg.style.background = "linear-gradient(90deg, #f59e0b, #d97706)";
+      holdSeg.title = "Key held down";
+      const gapSeg = document.createElement("div");
+      gapSeg.style.background = "repeating-linear-gradient(45deg, #3f3f46, #3f3f46 3px, #27272a 3px, #27272a 6px)";
+      gapSeg.title = "Wait before next step";
+      bar.appendChild(holdSeg);
+      bar.appendChild(gapSeg);
+
+      const total = document.createElement("span");
+      total.style.fontSize = "9.5px";
+      total.style.color = "#fbbf24";
+      total.style.whiteSpace = "nowrap";
+
+      refreshBar = () => {
+        const cycle = getBlockCycleMs(block);
+        holdSeg.style.width = `${(block.holdMs / cycle) * 100}%`;
+        gapSeg.style.width = `${(getBlockGapMs(block) / cycle) * 100}%`;
+        total.textContent = `= ${formatSec(cycle)}`;
+      };
+      refreshBar();
+
+      timeline.appendChild(bar);
+      timeline.appendChild(total);
+      row.appendChild(timeline);
     }
 
     macroBlocksList.appendChild(row);
@@ -1536,6 +1745,9 @@ addMacroBlockBtn?.addEventListener("click", () => {
   currentMacroBlocks.push({
     id: "b_" + Date.now() + "_" + Math.random().toString(36).slice(2, 5),
     key: lastBlock ? lastBlock.key : "ArrowRight",
+    mode: lastBlock ? lastBlock.mode : "tap",
+    holdMs: lastBlock ? lastBlock.holdMs : 0,
+    repeat: lastBlock ? lastBlock.repeat : true,
     delayMs: lastBlock ? lastBlock.delayMs : 2000
   });
   renderMacroBlocksInModal();
@@ -1597,6 +1809,20 @@ document.getElementById("preset-macro-scroll")?.addEventListener("click", () => 
   renderMacroBlocksInModal();
 });
 
+// Hold Key presets
+document.getElementById("preset-macro-hold-right")?.addEventListener("click", () => {
+  currentMacroBlocks = [{ id: "b_hr", key: "ArrowRight", mode: "hold", holdMs: 5000, repeat: true, delayMs: 1000 }];
+  renderMacroBlocksInModal();
+});
+document.getElementById("preset-macro-scrub")?.addEventListener("click", () => {
+  currentMacroBlocks = [{ id: "b_scrub", key: "ArrowRight", mode: "hold", holdMs: 2000, repeat: true, delayMs: 500 }];
+  renderMacroBlocksInModal();
+});
+document.getElementById("preset-macro-hold-down")?.addEventListener("click", () => {
+  currentMacroBlocks = [{ id: "b_hd", key: "ArrowDown", mode: "hold", holdMs: 3000, repeat: true, delayMs: 1000 }];
+  renderMacroBlocksInModal();
+});
+
 // Save & Load Tab Macro Profiles
 async function saveTabMacroState() {
   if (!currentTabId) return;
@@ -1616,7 +1842,7 @@ async function loadTabMacroState(tabId) {
   const store = await chrome.storage.session.get(key);
   const data = store[key];
   if (data?.blocks && data.blocks.length) {
-    currentMacroBlocks = data.blocks;
+    currentMacroBlocks = data.blocks.map(normalizeMacroBlock);
     isMacroLoop = data.loopMode !== false;
     currentMacroDirection = data.direction || "ArrowRight";
   } else {
@@ -1642,6 +1868,15 @@ async function checkAutoSlideTabStatus() {
       chrome.runtime.sendMessage({ type: "GET_MACRO_STATUS", tabId: currentTabId }, (res) => {
         if (res?.isActive) {
           setFbPlayState(true, res.currentStepIndex, res.totalSteps);
+          if (res.phase && res.phaseEndsAt) {
+            startMacroCountdown({
+              phase: res.phase,
+              phaseEndsAt: res.phaseEndsAt,
+              key: res.key,
+              stepIndex: res.currentStepIndex,
+              totalSteps: res.totalSteps
+            });
+          }
         } else {
           setFbPlayState(false);
         }
@@ -1655,7 +1890,37 @@ async function checkAutoSlideTabStatus() {
   }
 }
 
+// Live countdown ของแต่ละ phase (hold / wait) บน indicator ของ Quick Bar
+function stopMacroCountdown() {
+  if (macroCountdownTimer) {
+    clearInterval(macroCountdownTimer);
+    macroCountdownTimer = null;
+  }
+}
+
+function startMacroCountdown(tick) {
+  stopMacroCountdown();
+  if (!fbSlideIndicator) return;
+
+  const render = () => {
+    const remainSec = (Math.max(0, tick.phaseEndsAt - Date.now()) / 1000).toFixed(1);
+    const step = `Step ${tick.stepIndex + 1}/${tick.totalSteps}`;
+    if (tick.phase === "hold") {
+      fbSlideIndicator.textContent = `🔽 Holding [${tick.key}] ${remainSec}s · ${step}`;
+      fbSlideIndicator.style.background = "rgba(245, 158, 11, 0.25)";
+      fbSlideIndicator.style.color = "#fbbf24";
+    } else {
+      fbSlideIndicator.textContent = `● ${step} [${tick.key}] ⏳ ${remainSec}s`;
+      fbSlideIndicator.style.background = "rgba(16, 185, 129, 0.25)";
+      fbSlideIndicator.style.color = "#34d399";
+    }
+  };
+  render();
+  macroCountdownTimer = setInterval(render, 100);
+}
+
 function setFbPlayState(playing, stepIdx = 0, totalSteps = 1) {
+  if (!playing) stopMacroCountdown();
   isMacroPlaying = playing;
   if (!fbPlayBtn || !fbPlayIcon || !fbPlayText || !fbSlideIndicator) return;
 
@@ -1703,8 +1968,16 @@ fbPlayBtn?.addEventListener("click", async () => {
 // Single Step Button
 fbNextBtn?.addEventListener("click", () => {
   if (!currentTabId) return;
-  const activeKey = currentMacroBlocks[0]?.key || "ArrowRight";
-  chrome.runtime.sendMessage({ type: "STEP_MACRO_SINGLE", tabId: currentTabId, key: activeKey }, (res) => {
+  const firstBlock = currentMacroBlocks[0];
+  const activeKey = firstBlock?.key || "ArrowRight";
+  const holdMs = firstBlock?.mode === "hold" ? firstBlock.holdMs : 0;
+  chrome.runtime.sendMessage({
+    type: "STEP_MACRO_SINGLE",
+    tabId: currentTabId,
+    key: activeKey,
+    holdMs,
+    repeat: firstBlock?.repeat !== false
+  }, (res) => {
     if (res?.status === "ok") {
       if (fbSlideIndicator) fbSlideIndicator.textContent = `➡️ Dispatched [${activeKey}]`;
       setTimeout(() => {
@@ -1747,9 +2020,10 @@ chrome.runtime.onMessage.addListener((msg) => {
     }
   }
   if (msg.type === "MACRO_STEP_TICK" && msg.tabId === currentTabId) {
-    if (fbSlideIndicator) {
-      fbSlideIndicator.textContent = `● Step ${msg.stepIndex + 1}/${msg.totalSteps} [${msg.key}]`;
-    }
+    startMacroCountdown(msg);
+  }
+  if ((msg.type === "MACRO_SEQUENCE_STOPPED" || msg.type === "MACRO_SEQUENCE_COMPLETED") && msg.tabId === currentTabId) {
+    setFbPlayState(false);
   }
   if (msg.type === "SNIFFING_STATE_CHANGED") {
     if (msg.isGlobal || msg.tabId === currentTabId) {

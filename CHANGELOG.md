@@ -4,6 +4,18 @@ All notable changes to the **Network Image Sniffer & AI Toolkit (SniffLens)** pr
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+### Added
+- **Hold Key (กดค้าง) in Macro Studio**:
+  - Each Action Block can now be **Tap** (press & release, unchanged) or **Hold** (e.g. `➡️ Right` held for 5s), followed by an independent "then wait" delay.
+  - Hold simulates a real keyboard via CDP: `keyDown` → auto-repeat (`autoRepeat: true`, 500ms initial delay then ~33ms interval, toggleable per block) → `keyUp`. Hold duration 0.1s – 60s.
+  - Stuck-key safety: Stop / Apply / new sequence always sends `keyUp` before the debugger is detached.
+  - Modal UI: Tap/Hold toggle, hold & wait inputs, timeline bar, per-block `▶ Test`, total `Cycle` time, and new presets (`Hold ➡️ 5s`, `Scrub Video`, `Hold ⬇️ 3s`).
+  - Quick Bar shows a live countdown (`🔽 Holding [ArrowRight] 3.2s`).
+  - Existing saved blocks without `mode` load as Tap (fully backward compatible).
+
+---
+
 ## [3.6.1] - 2026-09-03
 ### Fixed & Added
 - **Threads.com New Domain Support**:

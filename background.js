@@ -606,7 +606,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       sendResponse({ status: "error", error: "No tabId provided" });
       return true;
     }
-    stepMacroSingle(targetTabId, keyName).then((success) => {
+    stepMacroSingle(targetTabId, keyName, msg.holdMs, msg.repeat).then((success) => {
       sendResponse({ status: success ? "ok" : "error" });
     });
     return true;
@@ -620,7 +620,10 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       isActive: Boolean(runner),
       currentStepIndex: runner?.currentStepIndex || 0,
       totalSteps: runner?.blocks?.length || 1,
-      loopMode: runner?.loopMode !== false
+      loopMode: runner?.loopMode !== false,
+      phase: runner?.phase || null,
+      phaseEndsAt: runner?.phaseEndsAt || 0,
+      key: runner?.blocks?.[runner.currentStepIndex]?.key || null
     });
     return true;
   }
@@ -751,18 +754,146 @@ async function sendNativeKey(tabId, keyName = "ArrowRight") {
   }
 }
 
+// ----------------------------------------------------------------------------
+// Hold Key (กดค้าง) support
+// ----------------------------------------------------------------------------
+const MACRO_HOLD_MIN_MS = 100;
+const MACRO_HOLD_MAX_MS = 60000;
+const HOLD_REPEAT_INITIAL_DELAY_MS = 500; // เหมือน Windows keyboard repeat delay
+const HOLD_REPEAT_INTERVAL_MS = 33;       // ~30 Hz
+const HOLD_MIN_GAP_MS = 100;               // gap ขั้นต่ำหลังปล่อยปุ่ม (Hold)
+const TAP_MIN_GAP_MS = 300;                // gap ขั้นต่ำเดิมของ Tap
+
+// Hold ของ STEP_MACRO_SINGLE (ทดสอบ 1 ครั้ง) ที่ยกเลิกได้ตอนกด Stop
+const activeSingleHolds = {};
+
+/** ทำให้ block เก่า (ไม่มี mode/holdMs) กลายเป็น Tap เหมือนเดิม */
+function normalizeMacroBlock(block) {
+  const b = { ...(block || {}) };
+  b.key = KEY_MAP[b.key] ? b.key : "ArrowRight";
+  b.mode = b.mode === "hold" ? "hold" : "tap";
+  b.holdMs = b.mode === "hold"
+    ? Math.min(MACRO_HOLD_MAX_MS, Math.max(MACRO_HOLD_MIN_MS, Number(b.holdMs) || 1000))
+    : 0;
+  b.repeat = b.repeat !== false;
+  b.delayMs = Number(b.delayMs) || 1500;
+  return b;
+}
+
+/** sleep ที่ยกเลิกได้ผ่าน ctl.wake() */
+function cancellableSleep(ms, ctl) {
+  return new Promise((resolve) => {
+    const done = () => {
+      clearTimeout(t);
+      if (ctl.wake === done) ctl.wake = null;
+      resolve();
+    };
+    const t = setTimeout(done, Math.max(0, ms));
+    ctl.wake = done;
+  });
+}
+
+async function dispatchKeyEvent(tabId, type, keyConfig, autoRepeat = false) {
+  const isChar = keyConfig.key.length === 1;
+  await chrome.debugger.sendCommand({ tabId }, "Input.dispatchKeyEvent", {
+    type,
+    windowsVirtualKeyCode: keyConfig.keyCode,
+    nativeVirtualKeyCode: keyConfig.keyCode,
+    macCharCode: keyConfig.keyCode,
+    code: keyConfig.code,
+    key: keyConfig.key,
+    autoRepeat,
+    unmodifiedText: isChar ? keyConfig.key : "",
+    text: isChar ? keyConfig.key : ""
+  });
+}
+
+/**
+ * กดปุ่มค้าง holdMs มิลลิวินาที: keyDown → (auto-repeat) → keyUp
+ * keyUp จะถูกส่งเสมอใน finally แม้ถูกยกเลิกหรือเกิด error กลางทาง (กัน stuck key)
+ * ctl: object ที่มี isCancelled / wake (runner หรือ ctl ชั่วคราว)
+ */
+async function holdNativeKey(tabId, keyName, holdMs, repeat = true, ctl = {}) {
+  const keyConfig = KEY_MAP[keyName] || KEY_MAP.ArrowRight;
+  const duration = Math.min(MACRO_HOLD_MAX_MS, Math.max(MACRO_HOLD_MIN_MS, Number(holdMs) || MACRO_HOLD_MIN_MS));
+  const attached = await ensureDebuggerAttached(tabId);
+  if (!attached) return false;
+
+  let isDown = false;
+  let ok = true;
+  try {
+    await dispatchKeyEvent(tabId, "rawKeyDown", keyConfig, false);
+    isDown = true;
+
+    const start = performance.now();
+    const end = start + duration;
+    let nextRepeat = start + HOLD_REPEAT_INITIAL_DELAY_MS;
+
+    while (!ctl.isCancelled) {
+      const now = performance.now();
+      if (now >= end) break;
+
+      if (repeat && now >= nextRepeat && nextRepeat < end) {
+        await dispatchKeyEvent(tabId, "rawKeyDown", keyConfig, true);
+        nextRepeat += HOLD_REPEAT_INTERVAL_MS;
+        if (nextRepeat < performance.now()) nextRepeat = performance.now() + HOLD_REPEAT_INTERVAL_MS;
+        continue;
+      }
+
+      const target = repeat ? Math.min(end, nextRepeat) : end;
+      await cancellableSleep(target - performance.now(), ctl);
+    }
+  } catch (err) {
+    console.error("[Sniffer Debugger] Hold key failed:", err);
+    ok = false;
+  } finally {
+    if (isDown) {
+      try {
+        await dispatchKeyEvent(tabId, "keyUp", keyConfig, false);
+      } catch (err) {
+        // debugger อาจถูก detach ไปแล้ว (browser ปล่อยปุ่มให้เองอยู่แล้ว)
+        console.warn("[Sniffer Debugger] keyUp after hold failed:", err);
+      }
+    }
+  }
+  return ok;
+}
+
+function broadcastMacroTick(tabId, runner, block, phase, phaseEndsAt) {
+  runner.phase = phase;
+  runner.phaseEndsAt = phaseEndsAt;
+  chrome.runtime.sendMessage({
+    type: "MACRO_STEP_TICK",
+    tabId,
+    stepIndex: runner.currentStepIndex,
+    totalSteps: runner.blocks.length,
+    key: block.key,
+    mode: block.mode,
+    holdMs: block.holdMs,
+    delayMs: block.delayMs,
+    phase,
+    phaseEndsAt
+  }).catch(() => {});
+}
+
 function startMacroSequence(tabId, blocks = [], loopMode = true) {
-  stopMacroSequence(tabId);
+  // หยุดของเดิม (ปล่อยปุ่มที่ค้างอยู่ก่อน) แต่ยังไม่ detach เพราะกำลังจะเริ่มใหม่
+  const released = stopMacroSequence(tabId, { detach: false });
   if (!blocks || !blocks.length) {
     blocks = [{ id: "b1", key: "ArrowRight", delayMs: 2000 }];
   }
 
   activeMacroLoops[tabId] = {
-    blocks,
+    blocks: blocks.map(normalizeMacroBlock),
     loopMode: Boolean(loopMode),
     currentStepIndex: 0,
     timer: null,
-    isCancelled: false
+    isCancelled: false,
+    wake: null,
+    activeHold: null,
+    ready: released,
+    phase: null,
+    phaseEndsAt: 0
   };
 
   runNextMacroStep(tabId);
@@ -772,28 +903,41 @@ async function runNextMacroStep(tabId) {
   const runner = activeMacroLoops[tabId];
   if (!runner || runner.isCancelled) return;
 
+  // รอให้ปุ่มจาก sequence เก่า (ถ้ามี) ถูกปล่อยก่อน
+  if (runner.ready) {
+    await runner.ready;
+    runner.ready = null;
+    if (runner.isCancelled || activeMacroLoops[tabId] !== runner) return;
+  }
+
   const block = runner.blocks[runner.currentStepIndex];
   if (!block) return;
 
-  // Broadcast step active
-  chrome.runtime.sendMessage({
-    type: "MACRO_STEP_TICK",
-    tabId,
-    stepIndex: runner.currentStepIndex,
-    totalSteps: runner.blocks.length,
-    key: block.key,
-    delayMs: block.delayMs
-  }).catch(() => {});
+  const isHold = block.mode === "hold";
 
   // Dispatch native hardware key
-  const success = await sendNativeKey(tabId, block.key);
+  let success;
+  if (isHold) {
+    broadcastMacroTick(tabId, runner, block, "hold", Date.now() + block.holdMs);
+    runner.activeHold = holdNativeKey(tabId, block.key, block.holdMs, block.repeat, runner);
+    success = await runner.activeHold;
+    runner.activeHold = null;
+    if (runner.isCancelled || activeMacroLoops[tabId] !== runner) return;
+  } else {
+    const delayForTick = Math.max(TAP_MIN_GAP_MS, block.delayMs || 1500);
+    broadcastMacroTick(tabId, runner, block, "wait", Date.now() + delayForTick);
+    success = await sendNativeKey(tabId, block.key);
+  }
   if (!success) {
     stopMacroSequence(tabId);
     return;
   }
 
   // Schedule next step
-  const delay = Math.max(300, block.delayMs || 1500);
+  const delay = Math.max(isHold ? HOLD_MIN_GAP_MS : TAP_MIN_GAP_MS, block.delayMs || 1500);
+  if (isHold) {
+    broadcastMacroTick(tabId, runner, block, "wait", Date.now() + delay);
+  }
   runner.timer = setTimeout(() => {
     if (!activeMacroLoops[tabId] || activeMacroLoops[tabId].isCancelled) return;
 
@@ -813,18 +957,53 @@ async function runNextMacroStep(tabId) {
   }, delay);
 }
 
-function stopMacroSequence(tabId) {
-  if (activeMacroLoops[tabId]) {
-    activeMacroLoops[tabId].isCancelled = true;
-    if (activeMacroLoops[tabId].timer) clearTimeout(activeMacroLoops[tabId].timer);
+/**
+ * หยุด Macro ของแท็บ — ถ้ากำลังกดค้างอยู่จะส่ง keyUp ให้เสร็จก่อน แล้วค่อย detach debugger
+ * @returns {Promise<void>} resolve เมื่อปุ่มที่ค้างอยู่ถูกปล่อยแล้ว
+ */
+function stopMacroSequence(tabId, { detach = true } = {}) {
+  let released = Promise.resolve();
+
+  const runner = activeMacroLoops[tabId];
+  if (runner) {
+    runner.isCancelled = true;
+    if (runner.timer) clearTimeout(runner.timer);
+    if (runner.wake) runner.wake(); // ปลุก hold loop ให้จบทันที
+    if (runner.activeHold) released = runner.activeHold.catch(() => {});
     delete activeMacroLoops[tabId];
   }
-  detachDebuggerSafe(tabId);
+
+  const single = activeSingleHolds[tabId];
+  if (single) {
+    single.ctl.isCancelled = true;
+    if (single.ctl.wake) single.ctl.wake();
+    released = Promise.all([released, single.promise.catch(() => {})]);
+  }
+
+  if (detach) {
+    released.then(() => {
+      // ถ้ามี sequence ใหม่เริ่มขึ้นมาแล้ว ห้าม detach ทับ
+      if (!activeMacroLoops[tabId]) detachDebuggerSafe(tabId);
+    });
+  }
+  return released;
 }
 
-async function stepMacroSingle(tabId, keyName = "ArrowRight") {
-  const success = await sendNativeKey(tabId, keyName);
-  return success;
+async function stepMacroSingle(tabId, keyName = "ArrowRight", holdMs = 0, repeat = true) {
+  const hold = Number(holdMs) || 0;
+  if (hold <= 0) {
+    return await sendNativeKey(tabId, keyName);
+  }
+
+  if (activeSingleHolds[tabId]) return false; // กำลังทดสอบ hold อยู่แล้ว
+  const ctl = { isCancelled: false, wake: null };
+  const promise = holdNativeKey(tabId, keyName, hold, repeat !== false, ctl);
+  activeSingleHolds[tabId] = { ctl, promise };
+  try {
+    return await promise;
+  } finally {
+    delete activeSingleHolds[tabId];
+  }
 }
 
 // หยุดการทำงานและเคลียร์ข้อมูลเมื่อแท็บถูกปิด

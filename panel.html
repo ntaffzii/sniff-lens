@@ -1064,17 +1064,23 @@
             <button class="chip-btn" id="preset-macro-tiktok">📱 TikTok/Reels Feed (⬇️ 3.0s)</button>
             <button class="chip-btn" id="preset-macro-grid">🔲 Grid (3x ➡️, 1x ⬇️)</button>
             <button class="chip-btn" id="preset-macro-scroll">📰 PageDown (⇟ 3.5s)</button>
+            <button class="chip-btn" id="preset-macro-hold-right">⏩ Hold ➡️ 5s</button>
+            <button class="chip-btn" id="preset-macro-scrub">🎞️ Scrub Video (➡️ hold 2s)</button>
+            <button class="chip-btn" id="preset-macro-hold-down">📜 Hold ⬇️ 3s</button>
           </div>
         </div>
 
         <!-- Block List Header -->
         <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 4px;">
           <span style="font-size: 11px; font-weight: 700; color: #e4e4e7;">Action Block Sequence:</span>
-          <span id="macro-blocks-count-label" style="font-size: 10px; color: #38bdf8;">1 Block</span>
+          <span style="display: flex; gap: 8px; align-items: center;">
+            <span id="macro-cycle-label" title="Total time of one full cycle" style="font-size: 10px; color: #fbbf24;">Cycle: 0s</span>
+            <span id="macro-blocks-count-label" style="font-size: 10px; color: #38bdf8;">1 Block</span>
+          </span>
         </div>
 
         <!-- Dynamically Rendered Macro Blocks -->
-        <div id="macro-blocks-list" style="display: flex; flex-direction: column; gap: 6px; max-height: 200px; overflow-y: auto; padding-right: 2px;">
+        <div id="macro-blocks-list" style="display: flex; flex-direction: column; gap: 6px; max-height: 280px; overflow-y: auto; padding-right: 2px;">
         </div>
 
         <!-- Add Block Button -->
